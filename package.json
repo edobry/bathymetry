@@ -1,0 +1,12 @@
+{
+    "name": "bathymetry",
+    "homepage": "https://github.com/edobry/bathymetry#readme",
+    "main": "index.js",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/edobry/bathymetry.git"
+    },
+    "dependencies": {
+        "three": "^0.84.0"
+    }
+}

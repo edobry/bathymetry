@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset=utf-8>
+        <title>bathymetry</title>
+        <style>
+            body { margin: 0; }
+            canvas { width: 100%; height: 100% }
+        </style>
+        <script src="node_modules/three/build/three.js"></script>
+        <script src="node_modules/three/examples/js/controls/OrbitControls.js"></script>
+    </head>
+    <body>
+        <script>
+            //hardcoded for now, should be changed to use sent-over values
+            const planeWidth = 1000;
+            const planeLength = 68;
+
+            const parseData = data =>
+                data.map(row => row
+                    .map(col => parseFloat(col)));
+
+            function buildScene(data) {
+                const scene = new THREE.Scene();
+
+                const geometry = buildGeometry(planeWidth, planeLength, data);
+
+                //this determines what it looks like. phong is a kind of shader
+                var material = new THREE.MeshPhongMaterial({
+                    color: "gray",
+                    //lets have it be visible from both sides
+                    side: THREE.DoubleSide
+                });
+
+                var mesh = new THREE.Mesh(geometry, material);
+                mesh.receiveShadow = true;
+                mesh.castShadow = true;
+
+                scene.add(mesh);
+                scene.add(buildLight());
+
+                return scene;
+            }
+
+            function buildGeometry(width, length, data) {
+                const geometry = new THREE.PlaneBufferGeometry(width*10, length*10, width - 1, length - 1);
+
+                //we want the plane facing us
+                geometry.rotateX(-Math.PI / 2);
+
+                //lets figure out the maximum depth for adjustment
+                const maxDepth = -Math.min(...[].concat(...data));
+
+                //now lets adjust the flat plane with the depth data
+                const vertices = geometry.attributes.position.array;
+                var pointsDone = 0;
+                for(var i = 0, j = 0, l = vertices.length; i < l; i++, j += 3) {
+                    //j + 1 because it is the y component that we modify
+
+                    const row = Math.floor(i/width);
+                    const col = i % width;
+
+                    //if we're within the bounds we have data for
+                    if(row < length && pointsDone < (width * length)) {
+                        //set the y coordinate to the appropriate value, adjusted
+                        vertices[j + 1] = data[row][col] + (maxDepth/2 + 600);
+                        pointsDone++;
+                    }
+                }
+                //we need this for shadows/reflections
+                geometry.computeVertexNormals();
+
+                return geometry;
+            }
+
+            function buildLight() {
+                const light = new THREE.DirectionalLight(0x78B6F3, 1);
+                light.castShadow = true;
+
+                light.position.set(1000, 1000, 100);
+
+                var dLight = 200;
+                var sLight = dLight * 0.25;
+
+                light.shadow.camera.left = -sLight;
+                light.shadow.camera.right = sLight;
+                light.shadow.camera.top = sLight;
+                light.shadow.camera.bottom = -sLight;
+                light.shadow.camera.near = dLight / 30;
+                light.shadow.camera.far = dLight;
+                light.shadow.mapSize.x = 1024;
+                light.shadow.mapSize.y = 1024;
+
+                return light;
+            }
+
+            function setupCamera() {
+                const aspect = window.innerWidth / window.innerHeight;
+
+                const camera = new THREE.PerspectiveCamera(60, aspect, 1, 10000);
+                camera.position.y = 500;
+                camera.position.z = -planeWidth * 5;
+                // camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+                return camera;
+            }
+
+            function setupRenderer() {
+                const renderer = new THREE.WebGLRenderer();
+
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                document.body.appendChild(renderer.domElement);
+
+                return renderer;
+            }
+
+            const onWindowResize = (camera, renderer) => () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+
+            function renderData(data) {
+                const renderer = setupRenderer();
+                const scene = buildScene(data);
+                const camera = setupCamera();
+                const controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+                window.addEventListener("resize", onWindowResize(camera, renderer), false);
+
+                const render = () => {
+                    requestAnimationFrame(render);
+                    controls.update();
+
+                    renderer.render(scene, camera);
+                }
+                render();
+            }
+
+            fetch("testData.json", { method: "get" })
+                .then(response => response.json())
+                .then(parseData)
+                .then(renderData)
+                .catch(err => {
+                    throw new Error(err); });
+        </script>
+    </body>
+</html>
