@@ -45,15 +45,15 @@ const onReadDone = (data, response) => {
     const parsedData = rows.slice(0, HEIGHT)
         .map(row => row.slice(0, WIDTH));
 
-    const maxDepth = -Math.min(...[].concat(...parsedData));
+    // const maxDepth = -Math.min(...[].concat(...parsedData));
 
     const resource = {
         data: parsedData,
         dimensions: {
             x: WIDTH,
             y: HEIGHT
-        },
-        maxDepth
+        }//,
+        // maxDepth
     };
 
     response.end(JSON.stringify(resource));
