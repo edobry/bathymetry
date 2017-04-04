@@ -22,7 +22,7 @@ const routes = {
 const serveStatic = (req, res) => file.serve(req, res);
 
 const server = http.createServer((req, res) => {
-    console.log(req.url);
+    console.log(`${req.connection.remoteAddress} - ${req.url}`);
     req.addListener("end", () => {
         const path = req.url.split('/');
         const handler = routes[path[1]] || serveStatic;

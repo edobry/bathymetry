@@ -3,31 +3,7 @@
     <head>
         <meta charset=utf-8>
         <title>bathymetry</title>
-        <style>
-            * {
-                color: white;
-                font-family: Helvetica
-            }
-            body { margin: 0; }
-            canvas { width: 100%; height: 100% }
-
-            .floater {
-                position: fixed;
-                background-color: #444c;
-                padding: 10px;
-            }
-
-            #header {
-                top: 10px;
-                left: 10px;
-
-            }
-
-            #message {
-                top: 10px;
-                right: 10px;
-            }
-        </style>
+        <link rel="stylesheet" type="text/css" href="styles.css"></link>
         <script src="node_modules/three/build/three.js"></script>
         <script src="node_modules/three/examples/js/controls/OrbitControls.js"></script>
         <script src="node_modules/zepto/dist/zepto.min.js"></script>
@@ -61,7 +37,6 @@
 
                 scene.add(mesh);
                 scene.add(buildSpotLight());
-                scene.add(buildHemisphereLight());
 
                 return scene;
             }
@@ -71,9 +46,6 @@
 
                 //we want the plane facing us
                 geometry.rotateX(-Math.PI / 2);
-
-                //lets figure out the maximum depth for adjustment
-                // const maxDepth = -Math.min(...[].concat(...data));
 
                 //now lets adjust the flat plane with the depth data
                 const vertices = geometry.attributes.position.array;
@@ -106,13 +78,6 @@
                 return light;
             }
 
-            function buildHemisphereLight() {
-                const light = new THREE.HemisphereLight(0x9fdbcf, 0x05373c, 10);
-                // light.castShadow = true;
-
-                light.position.set(0, 1000, 0);
-            }
-
             function setupCamera(dimensions) {
                 const aspect = window.innerWidth / window.innerHeight;
 
@@ -120,7 +85,6 @@
                 camera.position.y = 5000;
                 camera.position.z = -dimensions.x * 5;
                 // camera.lookAt(new THREE.Vector3(0, 0, 0));
-
 
                 return camera;
             }
@@ -150,17 +114,19 @@
                 const camera = setupCamera(response.dimensions);
                 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 
-                window.addEventListener("resize", onWindowResize(camera, renderer), false);
+                window.addEventListener("resize",
+                    onWindowResize(camera, renderer), false);
 
                 const render = () => {
                     requestAnimationFrame(render);
                     controls.update();
 
                     renderer.render(scene, camera);
-                }
+                };
                 render();
             }
 
+            //wait for the page to load...
             Zepto($ => {
                 const notify = message =>
                     $("#message").text(message);
@@ -181,8 +147,6 @@
                         notify("Error!");
                         throw new Error(err); });
             });
-
-
         </script>
     </body>
 </html>
