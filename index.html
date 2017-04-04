@@ -12,18 +12,14 @@
     </head>
     <body>
         <script>
-            //hardcoded for now, should be changed to use sent-over values
-            const planeWidth = 1000;
-            const planeLength = 68;
-
             const parseData = data =>
                 data.map(row => row
                     .map(col => parseFloat(col)));
 
-            function buildScene(data) {
+            function buildScene(dimensions, data) {
                 const scene = new THREE.Scene();
 
-                const geometry = buildGeometry(planeWidth, planeLength, data);
+                const geometry = buildGeometry(dimensions.x, dimensions.y, data);
 
                 //this determines what it looks like. phong is a kind of shader
                 var material = new THREE.MeshPhongMaterial({
@@ -37,7 +33,8 @@
                 mesh.castShadow = true;
 
                 scene.add(mesh);
-                scene.add(buildLight());
+                scene.add(buildSpotLight());
+                scene.add(buildHemisphereLight());
 
                 return scene;
             }
@@ -49,7 +46,7 @@
                 geometry.rotateX(-Math.PI / 2);
 
                 //lets figure out the maximum depth for adjustment
-                const maxDepth = -Math.min(...[].concat(...data));
+                // const maxDepth = -Math.min(...[].concat(...data));
 
                 //now lets adjust the flat plane with the depth data
                 const vertices = geometry.attributes.position.array;
@@ -63,7 +60,7 @@
                     //if we're within the bounds we have data for
                     if(row < length && pointsDone < (width * length)) {
                         //set the y coordinate to the appropriate value, adjusted
-                        vertices[j + 1] = data[row][col] + (maxDepth/2 + 600);
+                        vertices[j + 1] = data[row][col];
                         pointsDone++;
                     }
                 }
@@ -73,40 +70,38 @@
                 return geometry;
             }
 
-            function buildLight() {
-                const light = new THREE.DirectionalLight(0x78B6F3, 1);
+            function buildSpotLight() {
+                const light = new THREE.SpotLight(0x78B6F3, 1);
                 light.castShadow = true;
 
-                light.position.set(1000, 1000, 100);
-
-                var dLight = 200;
-                var sLight = dLight * 0.25;
-
-                light.shadow.camera.left = -sLight;
-                light.shadow.camera.right = sLight;
-                light.shadow.camera.top = sLight;
-                light.shadow.camera.bottom = -sLight;
-                light.shadow.camera.near = dLight / 30;
-                light.shadow.camera.far = dLight;
-                light.shadow.mapSize.x = 1024;
-                light.shadow.mapSize.y = 1024;
+                light.position.set(0, 100000, 0);
 
                 return light;
             }
 
-            function setupCamera() {
+            function buildHemisphereLight() {
+                const light = new THREE.HemisphereLight(0x9fdbcf, 0x05373c, 10);
+                // light.castShadow = true;
+
+                light.position.set(0, 1000, 0);
+            }
+
+            function setupCamera(dimensions) {
                 const aspect = window.innerWidth / window.innerHeight;
 
-                const camera = new THREE.PerspectiveCamera(60, aspect, 1, 10000);
-                camera.position.y = 500;
-                camera.position.z = -planeWidth * 5;
+                const camera = new THREE.PerspectiveCamera(75, aspect, 1, 100000);
+                camera.position.y = 5000;
+                camera.position.z = -dimensions.x * 5;
                 // camera.lookAt(new THREE.Vector3(0, 0, 0));
+
 
                 return camera;
             }
 
             function setupRenderer() {
                 const renderer = new THREE.WebGLRenderer();
+
+                renderer.shadowCameraVisible = true;
 
                 renderer.setSize(window.innerWidth, window.innerHeight);
                 document.body.appendChild(renderer.domElement);
@@ -121,10 +116,11 @@
                 renderer.setSize(window.innerWidth, window.innerHeight);
             }
 
-            function renderData(data) {
+            function renderData(response) {
+                const heightData = parseData(response.data);
                 const renderer = setupRenderer();
-                const scene = buildScene(data);
-                const camera = setupCamera();
+                const scene = buildScene(response.dimensions, heightData);
+                const camera = setupCamera(response.dimensions);
                 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 
                 window.addEventListener("resize", onWindowResize(camera, renderer), false);
@@ -138,9 +134,8 @@
                 render();
             }
 
-            fetch("testData.json", { method: "get" })
+            fetch("data/low res.asc", { method: "get" })
                 .then(response => response.json())
-                .then(parseData)
                 .then(renderData)
                 .catch(err => {
                     throw new Error(err); });
