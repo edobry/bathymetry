@@ -28,6 +28,26 @@ const printStation = ([station, points]) => {
     // });
 };
 
+const entriesToMap = (map, [key, value]) => {
+    map[key] = value;
+    return map;
+};
+
+const readStationInfo = () =>
+    fsP.readFileAsync("./stations1.txt", "UTF-8").then(contents => {
+        const sections = contents.split("\r\n\r\n");
+        const stations = sections.slice(0, sections.length - 1);
+
+        return stations.map(section => {
+            const [number, coords, distance] = section.split("\r\n");
+
+            return [
+                parseInt(number.split(" ")[0]),
+                parseFloat(distance.split("=")[1].split(" "))
+            ];
+        }).reduce(entriesToMap, {});
+    });
+
 const parseRowWith = header => row =>
     row.reduce((data, col, i) => {
         data[header[i]] = parseFloat(col);
@@ -42,10 +62,7 @@ const collectQueries = queries =>
             promise.then(response =>
                 [key, response]))
     ).then(responses =>
-        responses.reduce((result, [key, response]) => {
-            result[key] = response;
-            return result;
-        }, {}));
+        responses.reduce(entriesToMap, {}));
 
 const collectQueriesFromObj = queries =>
     collectQueries(Object.keys(queries)
@@ -83,7 +100,7 @@ const readStation = station =>
         }).map(parseRowWith(header));
     });
 
-fsP.readFileAsync("./transect_1.csv", "UTF-8").then(contents => {
+const transectP = fsP.readFileAsync("./transect_1.csv", "UTF-8").then(contents => {
     const rows = contents.split("\n")
         .map(row =>
             row.split("\t"));
@@ -99,16 +116,58 @@ fsP.readFileAsync("./transect_1.csv", "UTF-8").then(contents => {
 }).then(points => {
     // console.log("Transect depths:");
 
-    points.forEach(({ lat, lon, depth }) => {
-        // console.log(`Point (${lat.toFixed(4)}, ${lon.toFixed(4)}): Depth ${depth}`);
-    });
+    return points
+        .sort((a, b) => a["dist.km"] - b["dist.km"]);
 })
-.then(() =>
-    readStations([59, 60, 61]))
-.then(stations => {
-    console.log("Stations:");
 
-    Object.keys(stations)
-        .map(key => [key, stations[key]])
-        .map(printStation);
-})
+const stationP = Promise.join(
+    readStations([59, 60, 61]),
+    readStationInfo()
+).then(([stations, info]) =>
+    Object.keys(stations).map(key => [key, stations[key]])
+        .map(([key, station]) => [
+            key, {
+                temps: station,
+                dist: info[key]
+            }
+        ]).reduce(entriesToMap, {}));
+
+const interpolate = ({ "dist.km": distA, depth: depthA }, { "dist.km": distB, depth: depthB }) => {
+    const slope = (depthB - depthA) / (distB - distA);
+    const intercept = depthA - (distA * slope);
+
+    return pos => pos * slope + intercept;
+};
+
+Promise.join(transectP, stationP).then(([transects, stations]) => {
+    const stationPositions = Object.keys(stations).sort();
+
+    let transectPos = 0;
+    for(const [key, station] of Object.keys(stations).map(key => [key, stations[key]])) {
+        console.log(`\nProcessing station ${key} at position ${station.dist}`);
+        do {
+            var a = transects[transectPos];
+            var b = transects[transectPos + 1];
+
+            transectPos++;
+        } while(b["dist.km"] < station.dist);
+
+        console.log(`At position range [${a["dist.km"]}, ${b["dist.km"]}]`);
+
+        if(a["dist.km"] == station.dist || b["dist.km"] == station.dist)
+            continue;
+
+        const estimatedDepth = Math.floor(interpolate(a, b)(station.dist));
+
+        console.log(`Interpolated depth of ${estimatedDepth} at ${station.dist}`);
+        transects.splice(transectPos, 0, {
+            "dist.km": station.dist,
+            depth: estimatedDepth
+        });
+    }
+
+    console.log(Object.keys(transects)
+        .map(key => [
+            transects[key]["dist.km"],
+            transects[key].depth]));
+});
