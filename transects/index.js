@@ -69,6 +69,9 @@ const collectQueriesFromObj = queries =>
         .map(key => [key, queries[key]])
         .map(key => [key, query()]));
 
+const average = values => values
+    .reduce((total, val) => total + val, 0) / values.length;
+
 const readStations = stations =>
     collectQueries(stations
         .map(station =>
@@ -98,7 +101,30 @@ const readStation = station =>
 
             return cols;
         }).map(parseRowWith(header));
+    }).then(points => {
+        const depthRanges = points
+            .sort(byField("depth"))
+            .reduce((depthRanges, point) => {
+                const { depth, temp } = point;
+
+                const normDepth = Math.floor(depth);
+
+                if(!depthRanges[normDepth])
+                    depthRanges[normDepth] = [];
+
+                depthRanges[normDepth].push(temp);
+
+                return depthRanges;
+            }, {});
+
+        return Object.entries(depthRanges)
+            .map(([range, temps]) =>
+                [range, average(temps)])
+            .reduce(entriesToMap, {})
     });
+
+const byField = field => (a, b) =>
+    a[field] - b[field];
 
 const transectP = fsP.readFileAsync("./transect_1.csv", "UTF-8").then(contents => {
     const rows = contents.split("\n")
@@ -112,19 +138,15 @@ const transectP = fsP.readFileAsync("./transect_1.csv", "UTF-8").then(contents =
         .replace(/\r/g, ""));
 
     return rows.slice(1, rows.length - 1)
-        .map(parseRowWith(header));
-}).then(points => {
-    // console.log("Transect depths:");
-
-    return points
-        .sort((a, b) => a["dist.km"] - b["dist.km"]);
-})
+        .map(parseRowWith(header))
+        .sort(byField("dist.km"));
+});
 
 const stationP = Promise.join(
     readStations([59, 60, 61]),
     readStationInfo()
 ).then(([stations, info]) =>
-    Object.keys(stations).map(key => [key, stations[key]])
+    Object.entries(stations)
         .map(([key, station]) => [
             key, {
                 temps: station,
@@ -166,8 +188,32 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
         });
     }
 
-    console.log(Object.keys(transects)
-        .map(key => [
-            transects[key]["dist.km"],
-            transects[key].depth]));
+    return { transects, stations };
+
+    // console.log(Object.keys(transects)
+    //     .map(key => [
+    //         transects[key]["dist.km"],
+    //         transects[key].depth]));
+}).then(({ transects, stations }) => {
+    //do the banding now
+    //what is baanding? group station temps by degree range, mb just 10C for now?
+    //what data do we want to get out of this?
+    //transect depths, and then several temp series, one per temp range
+    //each has one point per station? do we interpolate? no point (ha)
+    //what to do about temp ranges that are not present in every station? like cold temps at depths.
+    //stations near shore will not have those. seems like we might have to interpolate a gradient for those mb?
+    //i guess we can interpolate temp point for every transect point. lots of data, might be redundant?
+    //cant think of another way to handle low temps. lets try it i guess.
+
+    //ok so, banding. go in station order? interpolating between each one? mb.
+    const orderedStations = Object.entries(stations)
+        .map(([name, { dist, temps }]) => [dist, {
+            name,
+            temps }])
+        .sort(byField("dist"))
+        .reduce(entriesToMap, {});
+
+    Object.entries(orderedStations[0]).map(x => console.log(x));
 });
+
+//TODO: banding
