@@ -100,8 +100,11 @@ const readStation = station =>
             cols[1] = cols[1].split("  ")[0];
 
             return cols;
-        }).map(parseRowWith(header));
+        }).map(parseRowWith(header))
+        //don't care about deeper than 800m
+        .filter(point => point.depth <= 801);
     }).then(points => {
+        //group points into integral depth group
         const depthRanges = points
             .sort(byField("depth"))
             .reduce((depthRanges, point) => {
@@ -117,6 +120,7 @@ const readStation = station =>
                 return depthRanges;
             }, {});
 
+        //average them
         return Object.entries(depthRanges)
             .map(([range, temps]) =>
                 [range, average(temps)])
@@ -196,7 +200,7 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
     //         transects[key].depth]));
 }).then(({ transects, stations }) => {
     //do the banding now
-    //what is baanding? group station temps by degree range, mb just 10C for now?
+    //what is banding? group station temps by degree range, mb just 10C for now?
     //what data do we want to get out of this?
     //transect depths, and then several temp series, one per temp range
     //each has one point per station? do we interpolate? no point (ha)
@@ -206,6 +210,9 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
     //cant think of another way to handle low temps. lets try it i guess.
 
     //ok so, banding. go in station order? interpolating between each one? mb.
+
+
+    //put the stations into x order
     const orderedStations = Object.entries(stations)
         .map(([name, { dist, temps }]) => [dist, {
             name,
@@ -213,7 +220,16 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
         .sort(byField("dist"))
         .reduce(entriesToMap, {});
 
-    Object.entries(orderedStations[0]).map(x => console.log(x));
+    console.log(Object.entries(orderedStations)
+        .map(([x, { name, temps }]) => `
+Station ${name}: ${x}km
+Depth   temperture
+${Object.entries(temps)
+    .map(([depth, temp]) =>
+        `${depth}     ${temp.toFixed(3)}`
+    ).join("\n")
+            }
+        `).join("\n"));
 });
 
 //TODO: banding
