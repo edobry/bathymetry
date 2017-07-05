@@ -262,7 +262,6 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
 
             return bands;
         }, {});
-        console.log(bands);
 
         //interpolate missing station points
         const bandInterpolators = Object.entries(bands)
@@ -308,8 +307,16 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
                 return agg;
             }, {});
 
-            console.log();
+            console.log("Temperature bands:");
             console.log(bands);
+
+            const transectSeries = transects
+                .map(({ "dist.km": dist, depth }) =>
+                    [dist.toFixed(2), -depth])
+                .reduce(entriesToMap, {});
+
+            console.log(`\nOcean floor:`);
+            console.log(transectSeries);
 
 
 //     console.log(Object.entries(orderedStations)

@@ -11,21 +11,148 @@
         <div id="chart"></div>
 
         <script type="text/javascript">
-            var chart = c3.generate({
+            const bands = {
+                6: { 0: 762, 11.03: 800, 1.75: 768 },
+                8: { 0: 665, 11.03: 703, 1.75: 671 },
+                10: { 0: 509, 11.03: 547, 1.75: 515 },
+                12: { 0: 472, 11.03: 510, 1.75: 478 },
+                14: { 0: 369, 11.03: 407, 1.75: 375 },
+                16: { 0: 293, 1.75: 299, 11.03: 331 },
+                18: { 0: 258, 1.75: 260, 11.03: 271 },
+                20: { 0: 183, 1.75: 189, 11.03: 222 },
+                22: { 0: 150, 1.75: 154, 11.03: 174 },
+                24: { 0: 91, 1.75: 99, 11.03: 141 },
+                26: { 0: 9, 1.75: 9, 11.03: 99 } };
+
+                const byField = field => (a, b) =>
+                    a[field] - b[field];
+
+            const bandRows = Object.entries(bands)
+                .map(([name, points]) => [
+                    name, ...Object.entries(points)
+                        .sort(byField(0))
+                        .map(([dist, depth]) =>
+                            depth)
+                ]);
+
+            const stationX = Object.entries(
+                Object.entries(bands)[0][1])
+                .sort(byField(0))
+                .map(([dist, depth]) =>
+                    parseFloat(dist))
+
+            console.log(stationX);
+
+            console.log(bandRows);
+
+            const bandNames = bandRows.map(([name]) => name);
+
+            console.log(bandNames);
+
+            const floor = {
+                0.00: 24,
+                0.18: 23,
+                0.35: 21,
+                0.53: 24,
+                0.70: 41,
+                0.88: 75,
+                1.05: 109,
+                1.23: 83,
+                1.41: 163,
+                1.58: 293,
+                1.75: 341,
+                1.76: 343,
+                1.93: 395,
+                2.11: 462,
+                2.28: 505,
+                2.46: 545,
+                2.64: 598,
+                2.81: 631,
+                2.99: 662,
+                3.16: 715,
+                3.34: 751,
+                3.51: 784,
+                3.69: 830,
+                3.87: 845,
+                4.04: 856,
+                4.22: 911,
+                4.39: 947,
+                4.57: 976,
+                4.74: 1001,
+                4.92: 984,
+                5.10: 1084,
+                5.27: 1109,
+                5.45: 1145,
+                5.62: 1256,
+                5.80: 1312,
+                5.97: 1375,
+                6.15: 1442,
+                6.33: 1510,
+                6.50: 1542,
+                6.68: 1589,
+                6.85: 1638,
+                7.03: 1621,
+                7.20: 1685,
+                7.38: 1730,
+                7.56: 1728,
+                7.73: 1792,
+                7.91: 1887,
+                8.08: 1901,
+                8.26: 1980,
+                8.44: 2049,
+                8.61: 2090,
+                8.79: 2169,
+                8.96: 2169,
+                9.14: 2062,
+                9.31: 2147,
+                9.49: 2334,
+                9.67: 2280,
+                9.84: 2321,
+                10.02: 2427,
+                10.19: 2484,
+                10.37: 2492,
+                10.54: 2517,
+                10.72: 2542,
+                10.90: 2549,
+                11.03: 2579,
+                11.07: 2588
+            };
+
+            const floorVals = Object.values(floor);
+
+            const entriesToMap = (map, [key, value]) => {
+                map[key] = value;
+                return map;
+            };
+
+            const xVals = Object.keys(floor).map(parseFloat);
+
+            const config = {
                 bindto: "#chart",
                 data: {
+                    xs: [
+                            ...bandNames.map(name =>
+                                [name, "stationX"]),
+                            ["floor", "x"]
+                        ].reduce(entriesToMap, {}),
                     columns: [
-                        ["data1", 300, 350, 300, 0, 0, 120],
-                        ["data2", 130, 100, 140, 200, 150, 50]
+                        ["x", ...xVals],
+                        ["stationX", ...stationX],
+                        ...bandRows,
+                        ["floor", ...floorVals]
                     ],
-                    types: {
-                        data1: "area",
-                        data2: "area"
-                        // "line", "spline", "step", "area", "area-step" are also available to stack
-                    },
-                    groups: [["data1", "data2"]]
+                    // "line", "spline", "step", "area", "area-step" are also available to stack
+                    types: [
+                        ...bandNames.map(name => [name, "area"]),
+                        ["floor", "area"]
+                    ].reduce(entriesToMap, {}),
+                    groups: [[...bandNames, "floor"]]
                 }
-            });
+            };
+
+            console.log(config);
+
+            var chart = c3.generate(config);
         </script>
     </body>
 </html>
