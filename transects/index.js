@@ -130,6 +130,9 @@ const readStation = station =>
 const byField = field => (a, b) =>
     a[field] - b[field];
 
+const byFieldDesc = field => (a, b) =>
+    b[field] - a[field];
+
 const transectP = fsP.readFileAsync("./transect_1.csv", "UTF-8").then(contents => {
     const rows = contents.split("\n")
         .map(row =>
@@ -158,19 +161,32 @@ const stationP = Promise.join(
             }
         ]).reduce(entriesToMap, {}));
 
-const interpolate = ({ "dist.km": distA, depth: depthA }, { "dist.km": distB, depth: depthB }) => {
-    const slope = (depthB - depthA) / (distB - distA);
-    const intercept = depthA - (distA * slope);
+const interpolate = xField => (a, b) => {
+    const aX = a[xField];
+    const aY = a.depth;
 
-    return pos => pos * slope + intercept;
+    const bX = b[xField];
+    const bY = b.depth;
+
+    const slope = (bY - aY) / (bX - aX);
+
+    return (pos, interceptPoint = a) => {
+        const iX = interceptPoint[xField];
+        const iY = interceptPoint.depth;
+
+        const intercept = iY - (iX * slope);
+        return pos * slope + intercept;
+    };
 };
+
+const interpolateDist = interpolate("dist.km");
 
 Promise.join(transectP, stationP).then(([transects, stations]) => {
     const stationPositions = Object.keys(stations).sort();
 
     let transectPos = 0;
-    for(const [key, station] of Object.keys(stations).map(key => [key, stations[key]])) {
-        console.log(`\nProcessing station ${key} at position ${station.dist}`);
+    for(const [key, station] of Object.entries(stations)) {
+        // console.log(`\nProcessing station ${key} at position ${station.dist}`);
         do {
             var a = transects[transectPos];
             var b = transects[transectPos + 1];
@@ -178,20 +194,19 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
             transectPos++;
         } while(b["dist.km"] < station.dist);
 
-        console.log(`At position range [${a["dist.km"]}, ${b["dist.km"]}]`);
+        // console.log(`At position range [${a["dist.km"]}, ${b["dist.km"]}]`);
 
         if(a["dist.km"] == station.dist || b["dist.km"] == station.dist)
             continue;
 
-        const estimatedDepth = Math.floor(interpolate(a, b)(station.dist));
+        const estimatedDepth = Math.floor(interpolateDist(a, b)(station.dist));
 
-        console.log(`Interpolated depth of ${estimatedDepth} at ${station.dist}`);
+        // console.log(`Interpolated depth of ${estimatedDepth} at ${station.dist}`);
         transects.splice(transectPos, 0, {
             "dist.km": station.dist,
             depth: estimatedDepth
         });
     }
-
     return { transects, stations };
 
     // console.log(Object.keys(transects)
@@ -217,19 +232,122 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
         .map(([name, { dist, temps }]) => [dist, {
             name,
             temps }])
-        .sort(byField("dist"))
-        .reduce(entriesToMap, {});
+        .sort(byField("dist"));
+        // .reduce(entriesToMap, {});
 
-    console.log(Object.entries(orderedStations)
-        .map(([x, { name, temps }]) => `
-Station ${name}: ${x}km
-Depth   temperture
-${Object.entries(temps)
-    .map(([depth, temp]) =>
-        `${depth}     ${temp.toFixed(3)}`
-    ).join("\n")
-            }
-        `).join("\n"));
+    const bandSize = 2;
+    const bands = orderedStations
+        //group station temperatures into bands
+        .map(([dist, { name, temps }]) => ({
+                dist,
+                bands: Object.entries(temps)
+                    .reduce((agg, [depth, temp]) => {
+                        const closest = Math.floor(temp / bandSize) * bandSize;
+
+                        if((agg[closest] || 0) < depth)
+                            agg[closest] = depth;
+
+                        return agg;
+                    }, {})
+            }))
+        //invert to band-series
+        .reduce((bands, station, i) => {
+            Object.entries(station.bands)
+                .forEach(([temp, depth]) => {
+                    if(typeof bands[temp] != "object")
+                        bands[temp] = {};
+
+                    bands[temp][station.dist] = depth;
+                });
+
+            return bands;
+        }, {});
+        console.log(bands);
+
+        //interpolate missing station points
+        const bandInterpolators = Object.entries(bands)
+            .filter(([band, points]) =>
+                Object.keys(points).length >= 2)
+            .map(makeInterpolators)
+            .reduce(entriesToMap, {});
+
+        //interpolate bands that are missing station points
+        Object.entries(bands)
+            //order by temperature
+            .sort(byFieldDesc(0))
+            .filter(([band, points]) =>
+                //get the ones that need interpolating
+                Object.keys(points).length < orderedStations.length)
+            .reduce((agg, [band, points]) => {
+                //get the band interpolator or reuse previous one
+                if(bandInterpolators[band])
+                    agg.interpolate = Object.entries(bandInterpolators[band].lines)
+                        .sort(byField(0))[0][1];
+
+                //find the stations that need interpolation
+                const pointsToInterpolate = [];
+                let firstKnownPoint;
+                for(const [dist, { name, temps }] of orderedStations.sort(byField(0))) {
+                    //once we reach the first station with data, we're done
+                    if(points[dist]) {
+                        firstKnownPoint = {
+                            dist,
+                            depth: points[dist]
+                        };
+                        break;
+                    }
+
+                    pointsToInterpolate.push(dist);
+                }
+
+                pointsToInterpolate
+                    .forEach(point => {
+                        points[point] = Math.round(agg.interpolate(point, firstKnownPoint));
+                    });
+
+                return agg;
+            }, {});
+
+            console.log();
+            console.log(bands);
+
+
+//     console.log(Object.entries(orderedStations)
+//         .map(([x, { name, temps }]) => `
+// Station ${name}: ${x}km
+// Depth   temperture
+// ${Object.entries(temps).slice(0,20)
+//     .map(([depth, temp]) =>
+//         `${depth}     ${temp.toFixed(3)}`
+//     ).join("\n")
+//             }
+// ...`).join("\n"));
 });
+
+const interpolateD = interpolate("dist");
+
+const makeInterpolators = ([band, points]) => {
+    const { lines } = Object.entries(points)
+        .map(([dist, depth]) => ({
+            dist,
+            depth }))
+        .reduce((agg, point) => {
+            const isFirst = !agg.prevPoint;
+
+            if(!isFirst)
+                agg.lines[agg.prevPoint.dist] = interpolateD(agg.prevPoint, point);
+
+            agg.prevPoint = point;
+
+            return agg;
+        }, {
+            lines: {},
+        })
+
+    return [
+        band,
+        { points, lines }
+    ];
+};
 
 //TODO: banding
