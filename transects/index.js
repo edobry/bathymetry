@@ -263,111 +263,130 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
             return bands;
         }, {});
 
-        let bandInterpolators = Object.entries(bands)
-            .filter(([band, points]) =>
-                Object.keys(points).length >= 2)
-            .map(makeInterpolators)
-            .reduce(entriesToMap, {});
+    let bandInterpolators = Object.entries(bands)
+        .filter(([band, points]) =>
+            Object.keys(points).length >= 2)
+        .map(makeInterpolators)
+        .reduce(entriesToMap, {});
 
-        //interpolate bands that are missing station points
-        Object.entries(bands)
-            //order by temperature
-            .sort(byFieldDesc(0))
-            .filter(([band, points]) =>
-                //get the ones that need interpolating
-                Object.keys(points).length < orderedStations.length)
-            .reduce((agg, [band, points]) => {
-                //get the band interpolator or reuse previous one
-                if(bandInterpolators[band])
-                    agg.interpolate = Object.entries(bandInterpolators[band].lines)
-                        .sort(byField(0))[0][1];
+    //interpolate bands that are missing station points
+    Object.entries(bands)
+        //order by temperature
+        .sort(byFieldDesc(0))
+        .filter(([band, points]) =>
+            //get the ones that need interpolating
+            Object.keys(points).length < orderedStations.length)
+        .reduce((agg, [band, points]) => {
+            //get the band interpolator or reuse previous one
+            if(bandInterpolators[band])
+                agg.interpolate = Object.entries(bandInterpolators[band].lines)
+                    .sort(byField(0))[0][1];
 
-                //find the stations that need interpolation
-                const pointsToInterpolate = [];
-                let firstKnownPoint;
-                for(const [dist, { name, temps }] of orderedStations.sort(byField(0))) {
-                    //once we reach the first station with data, we're done
-                    if(points[dist]) {
-                        firstKnownPoint = {
-                            dist,
-                            depth: points[dist]
-                        };
-                        break;
-                    }
-
-                    pointsToInterpolate.push(dist);
+            //find the stations that need interpolation
+            const pointsToInterpolate = [];
+            let firstKnownPoint;
+            for(const [dist, { name, temps }] of orderedStations.sort(byField(0))) {
+                //once we reach the first station with data, we're done
+                if(points[dist]) {
+                    firstKnownPoint = {
+                        dist,
+                        depth: points[dist]
+                    };
+                    break;
                 }
 
-                pointsToInterpolate
+                pointsToInterpolate.push(dist);
+            }
+
+            pointsToInterpolate
+                .forEach(point => {
+                    points[point] = Math.round(agg.interpolate(point, firstKnownPoint));
+                });
+
+            return agg;
+        }, {});
+
+    const maxDepth = 800;
+
+    Object.entries(bands)
+        .sort(byField(0))
+        .reduce((agg, [band, points], i) => {
+            if(i == 0)
+                agg.prev = Object.keys(points)
+                    .map(dist => [dist, 0])
+                    .reduce(entriesToMap, {});
+
+            const newPoints = Object.entries(points)
+                .map(([dist, depth]) =>
+                    [dist, (maxDepth - depth) - agg.prev[dist]])
+                .forEach(([dist, depth]) =>
+                    agg.prev[dist] += points[dist] = depth);
+
+            return agg;
+        }, {});
+
+    //regen interpolators to make things easier, dont wanna think too hard
+    bandInterpolators = Object.entries(bands)
+        .map(makeInterpolators)
+        .reduce(entriesToMap, {});
+
+    //get a nice clean floor series
+    const transectSeries = transects
+        .map(({ "dist.km": dist, depth }) =>
+            [dist.toFixed(2), -depth])
+        .reduce(entriesToMap, {});
+
+
+    // interpolate between stations now
+    Object.entries(bands)
+        //order by temperature
+        .sort(byFieldDesc(0))
+        .forEach(([band, points]) => {
+            Object.entries(transectSeries).reduce((agg, [dist], i) => {
+                const isLast = i == Object.keys(transectSeries).length - 1;
+
+                //if this is the end of a range, or the final element
+                if(!points[dist] || isLast) {
+                    agg.pointsToInterpolate.push(dist);
+
+                    if(!isLast)
+                        return agg;
+                }
+
+                if(!isLast)
+                    agg.lastKnownPoint = {
+                        dist,
+                        depth: points[dist]
+                    };
+
+                //get the correct interpolator
+                const interpolaterCandidates = Object.entries(bandInterpolators[band].lines)
+                    .filter(([startPoint, interpolater]) =>
+                        startPoint < dist)
+                    .sort(byField(0));
+
+                //get the last one in the range
+                const interpolater = interpolaterCandidates[interpolaterCandidates.length - 1][1];
+
+                //fuckn do it
+                agg.pointsToInterpolate
                     .forEach(point => {
-                        points[point] = Math.round(agg.interpolate(point, firstKnownPoint));
+                        points[point] = Math.round(interpolater(point, agg.lastKnownPoint));
                     });
+                //then clear out the range
+                agg.pointsToInterpolate = [];
 
                 return agg;
-            }, {});
+            }, {
+                pointsToInterpolate: []
+            });
+        }, {});
 
-            //regen interpolators to make things easier, dont wanna think too hard
-            bandInterpolators = Object.entries(bands)
-                .map(makeInterpolators)
-                .reduce(entriesToMap, {});
+    console.log("Interpolated temperature bands:");
+    console.log(bands);
 
-            //get a nice clean floor series
-            const transectSeries = transects
-                .map(({ "dist.km": dist, depth }) =>
-                    [dist.toFixed(2), -depth])
-                .reduce(entriesToMap, {});
-
-
-            // interpolate between stations now
-            Object.entries(bands)
-                //order by temperature
-                .sort(byFieldDesc(0))
-                .forEach(([band, points]) => {
-                    Object.entries(transectSeries).reduce((agg, [dist], i) => {
-                        const isLast = i == Object.keys(transectSeries).length - 1;
-
-                        //if this is the end of a range, or the final element
-                        if(!points[dist] || isLast) {
-                            agg.pointsToInterpolate.push(dist);
-
-                            if(!isLast)
-                                return agg;
-                        }
-
-                        if(!isLast)
-                            agg.lastKnownPoint = {
-                                dist,
-                                depth: points[dist]
-                            };
-
-                        //get the correct interpolator
-                        const interpolaterCandidates = Object.entries(bandInterpolators[band].lines)
-                            .filter(([startPoint, interpolater]) =>
-                                startPoint < dist)
-                            .sort(byField(0));
-
-                        //get the last one in the range
-                        const interpolater = interpolaterCandidates[interpolaterCandidates.length - 1][1];
-
-                        //fuckn do it
-                        agg.pointsToInterpolate
-                            .forEach(point => {
-                                points[point] = Math.round(interpolater(point, agg.lastKnownPoint));
-                            });
-                        //then clear out the range
-                        agg.pointsToInterpolate = [];
-
-                        return agg;
-                    }, {
-                        pointsToInterpolate: []
-                    });
-                }, {});
-
-            console.log("Interpolated temperature bands:");
-            console.log(bands);
-
-            console.log(`\nOcean floor:`);
-            console.log(transectSeries);
+    console.log(`\nOcean floor:`);
+    console.log(transectSeries);
 });
 
 const interpolateD = interpolate("dist");
@@ -396,5 +415,3 @@ const makeInterpolators = ([band, points]) => {
         { points, lines }
     ];
 };
-
-//TODO: banding
