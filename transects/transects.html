@@ -44,6 +44,8 @@
 
             const drawChart = ({ bands, floor }) => {
                 const bandRows = Object.entries(bands)
+                    .sort(([a], [b]) =>
+                        parseFloat(b) - parseFloat(a))
                     .map(([name, points]) => [
                         name, ...Object.entries(points)
                             .sort(byField(0))
@@ -51,13 +53,7 @@
                                 depth)
                     ]);
 
-                console.log(bandRows);
-
                 const bandNames = bandRows.map(([name]) => name);
-
-                console.log(bandNames);
-
-                const floorVals = Object.values(floor).filter(depth => depth < 800).map(x => 800-x);
 
                 const entriesToMap = (map, [key, value]) => {
                     map[key] = value;
@@ -65,6 +61,11 @@
                 };
 
                 const xVals = Object.keys(floor).map(parseFloat);
+                const stationX = Object.keys(Object.values(bands)[0]);
+
+                const floorVals = Object.values(floor)
+                    .filter(depth => depth < 800)
+                    .map(x => 800-x);
 
                 const config = {
                     bindto: "#chart",
@@ -72,18 +73,20 @@
                         height: 500
                     },
                     data: {
-                        x: "x",
+                        xs: [
+                            ["floor", "x"],
+                            ["surface", "x"],
+                            ...bandNames.map(band => [band, "stationX"])
+                        ].reduce(entriesToMap, {}),
                         columns: [
                             ["x", ...xVals],
+                            ["stationX", ...stationX],
                             ["surface", ...xVals.map(x => 800)],
                             ...bandRows,
                             ["floor", ...floorVals]
                         ],
-                        order: false,
-                        // order: (a, b) => {
-                        //     console.log(a,b);
-                        //     return parseInt(a.id) - parseInt(b.id);
-                        // },
+                        // order: false,
+                        order: bandNames,
                         // "line", "spline", "step", "area", "area-step" are also available to stack
                         types: [
                             ["floor", "area"],
@@ -116,6 +119,7 @@
                 };
 
                 console.log(config);
+                console.log(config.data.columns.map(col => col[0]));
 
                 var chart = c3.generate(config);
             };

@@ -128,10 +128,10 @@ const readStation = station =>
     });
 
 const byField = field => (a, b) =>
-    a[field] - b[field];
+    parseFloat(a[field]) - parseFloat(b[field]);
 
 const byFieldDesc = field => (a, b) =>
-    b[field] - a[field];
+    parseFloat(b[field]) - parseFloat(a[field]);
 
 const transectP = fsP.readFileAsync("./transect_1.csv", "UTF-8").then(contents => {
     const rows = contents.split("\n")
@@ -209,10 +209,6 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
     }
     return { transects, stations };
 
-    // console.log(Object.keys(transects)
-    //     .map(key => [
-    //         transects[key]["dist.km"],
-    //         transects[key].depth]));
 }).then(({ transects, stations }) => {
     //do the banding now
     //what is banding? group station temps by degree range, mb just 10C for now?
@@ -235,21 +231,27 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
         .sort(byField("dist"));
         // .reduce(entriesToMap, {});
 
-    const bandSize = 2;
     const bands = orderedStations
         //group station temperatures into bands
         .map(([dist, { name, temps }]) => ({
                 dist,
                 bands: Object.entries(temps)
                     .reduce((agg, [depth, temp]) => {
-                        //find the band this should belong to
-                        const closest = Math.floor(temp / bandSize) * bandSize;
+                        if(temp < 18)
+                            agg.bandSize = 2;
 
-                        if(!agg[closest])
-                            agg[closest] = depth;
+                        //find the band this should belong to
+                        const closest = Math.floor(temp / agg.bandSize) * agg.bandSize;
+                        // console.log(`Temp ${temp} bandSize ${agg.bandSize} closest to ${closest}`);
+
+                        if(!agg.bands[closest])
+                            agg.bands[closest] = depth;
 
                         return agg;
-                    }, {})
+                    }, {
+                        bandSize: 1,
+                        bands: {}
+                    }).bands
             }))
         //invert to band-series
         .reduce((bands, station, i) => {
@@ -339,51 +341,6 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
 
     const floorEntries = Object.entries(floor);
     const xPositions = Object.keys(floor);
-
-    // interpolate between stations now
-    Object.entries(bands)
-        //order by temperature
-        .sort(byFieldDesc(0))
-        .forEach(([band, points]) => {
-            floorEntries.reduce((agg, [dist], i) => {
-                const isLast = i == xPositions.length - 1;
-
-                //if this is the end of a range, or the final element
-                if(!points[dist] || isLast) {
-                    agg.pointsToInterpolate.push(dist);
-
-                    if(!isLast)
-                        return agg;
-                }
-
-                if(!isLast)
-                    agg.lastKnownPoint = {
-                        dist,
-                        depth: points[dist]
-                    };
-
-                //get the correct interpolator
-                const interpolaterCandidates = Object.entries(bandInterpolators[band].lines)
-                    .filter(([startPoint, interpolater]) =>
-                        startPoint < dist)
-                    .sort(byField(0));
-
-                //get the last one in the range
-                const interpolater = interpolaterCandidates[interpolaterCandidates.length - 1][1];
-
-                //fuckn do it
-                agg.pointsToInterpolate
-                    .forEach(point => {
-                        points[point] = Math.round(interpolater(point, agg.lastKnownPoint));
-                    });
-                //then clear out the range
-                agg.pointsToInterpolate = [];
-
-                return agg;
-            }, {
-                pointsToInterpolate: []
-            });
-        }, {});
 
     fsP.writeFileAsync("./transect1.json", JSON.stringify({
         bands, floor
