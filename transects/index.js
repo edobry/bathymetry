@@ -239,8 +239,8 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
                 dist,
                 bands: Object.entries(temps)
                     .reduce((agg, [depth, temp]) => {
-                        if(temp < 18)
-                            agg.bandSize = 2;
+                        // if(temp < 18)
+                        //     agg.bandSize = 2;
 
                         //find the band this should belong to
                         const closest = Math.floor(temp / agg.bandSize) * agg.bandSize;
@@ -268,6 +268,8 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
             return bands;
         }, {});
 
+        console.log(bands);
+
     let bandInterpolators = Object.entries(bands)
         .filter(([band, points]) =>
             Object.keys(points).length >= 2)
@@ -283,9 +285,10 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
             Object.keys(points).length < orderedStations.length)
         .reduce((agg, [band, points]) => {
             //get the band interpolator or reuse previous one
-            if(bandInterpolators[band])
+            if(bandInterpolators[band]) {
                 agg.interpolate = Object.entries(bandInterpolators[band].lines)
                     .sort(byField(0))[0][1];
+            }
 
             //find the stations that need interpolation
             const pointsToInterpolate = [];
@@ -310,6 +313,9 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
 
             return agg;
         }, {});
+
+
+    console.log(bands);
 
     //convert to band stacks
     Object.entries(bands)

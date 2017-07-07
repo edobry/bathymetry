@@ -32,6 +32,9 @@
             const byField = field => (a, b) =>
                 a[field] - b[field];
 
+            const byFieldDesc = field => (a, b) =>
+                b[field] - a[field];
+
             fetch("./transect1.json", { method: "get" })
                 .then(response =>
                     response.json())
@@ -48,7 +51,6 @@
                         parseFloat(b) - parseFloat(a))
                     .map(([name, points]) => [
                         name, ...Object.entries(points)
-                            .sort(byField(0))
                             .map(([dist, depth]) =>
                                 depth)
                     ]);
@@ -61,7 +63,9 @@
                 };
 
                 const xVals = Object.keys(floor).map(parseFloat);
-                const stationX = Object.keys(Object.values(bands)[0]);
+                const stationX = Object.keys(Object.values(bands)[0])
+                    .map(parseFloat)
+                    .sort();
 
                 const floorVals = Object.values(floor)
                     .filter(depth => depth < maxDepth)
@@ -123,18 +127,6 @@
 
                 var chart = c3.generate(config);
             };
-
-            // $(".c3-target-floor path").css({
-            //     opacity: 1,
-            //     fill: "#7e7d6a"
-            // });
-            //
-            // $(".c3-circles-floor circle").css({
-            //     fill: "#c4c3a6"
-            // });
-            // $(".c3-lines-floor path").css({
-            //     stroke: "#c4c3a6"
-            // });
         </script>
     </body>
 </html>
