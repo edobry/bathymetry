@@ -306,8 +306,8 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
             return agg;
         }, {});
 
+    //convert to band stacks
     const maxDepth = 800;
-
     Object.entries(bands)
         .sort(byField(0))
         .reduce((agg, [band, points], i) => {
@@ -331,19 +331,21 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
         .reduce(entriesToMap, {});
 
     //get a nice clean floor series
-    const transectSeries = transects
+    const floor = transects
         .map(({ "dist.km": dist, depth }) =>
             [dist.toFixed(2), -depth])
         .reduce(entriesToMap, {});
 
+    const floorEntries = Object.entries(floor);
+    const xPositions = Object.keys(floor);
 
     // interpolate between stations now
     Object.entries(bands)
         //order by temperature
         .sort(byFieldDesc(0))
         .forEach(([band, points]) => {
-            Object.entries(transectSeries).reduce((agg, [dist], i) => {
-                const isLast = i == Object.keys(transectSeries).length - 1;
+            floorEntries.reduce((agg, [dist], i) => {
+                const isLast = i == xPositions.length - 1;
 
                 //if this is the end of a range, or the final element
                 if(!points[dist] || isLast) {
@@ -382,11 +384,9 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
             });
         }, {});
 
-    console.log("Interpolated temperature bands:");
-    console.log(bands);
-
-    console.log(`\nOcean floor:`);
-    console.log(transectSeries);
+    fsP.writeFileAsync("./transect1.json", JSON.stringify({
+        bands, floor
+    })).then(() => console.log("Done!"));
 });
 
 const interpolateD = interpolate("dist");
