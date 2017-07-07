@@ -5,6 +5,8 @@ const
 
 fsP = Promise.promisifyAll(fs);
 
+const maxDepth = 400;
+
 const printStation = ([station, points]) => {
     console.log(`\nStation ${station} temperatures:`);
 
@@ -102,7 +104,7 @@ const readStation = station =>
             return cols;
         }).map(parseRowWith(header))
         //don't care about deeper than 800m
-        .filter(point => point.depth <= 801);
+        .filter(point => point.depth <= maxDepth + 1);
     }).then(points => {
         //group points into integral depth group
         const depthRanges = points
@@ -310,7 +312,6 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
         }, {});
 
     //convert to band stacks
-    const maxDepth = 800;
     Object.entries(bands)
         .sort(byField(0))
         .reduce((agg, [band, points], i) => {
@@ -343,7 +344,7 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
     const xPositions = Object.keys(floor);
 
     fsP.writeFileAsync("./transect1.json", JSON.stringify({
-        bands, floor
+        bands, floor, maxDepth
     })).then(() => console.log("Done!"));
 });
 

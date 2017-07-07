@@ -42,7 +42,7 @@
                     throw new Error(err);
                 });
 
-            const drawChart = ({ bands, floor }) => {
+            const drawChart = ({ bands, floor, maxDepth }) => {
                 const bandRows = Object.entries(bands)
                     .sort(([a], [b]) =>
                         parseFloat(b) - parseFloat(a))
@@ -64,8 +64,8 @@
                 const stationX = Object.keys(Object.values(bands)[0]);
 
                 const floorVals = Object.values(floor)
-                    .filter(depth => depth < 800)
-                    .map(x => 800-x);
+                    .filter(depth => depth < maxDepth)
+                    .map(x => maxDepth-x);
 
                 const config = {
                     bindto: "#chart",
@@ -81,7 +81,7 @@
                         columns: [
                             ["x", ...xVals],
                             ["stationX", ...stationX],
-                            ["surface", ...xVals.map(x => 800)],
+                            ["surface", ...xVals.map(x => maxDepth)],
                             ...bandRows,
                             ["floor", ...floorVals]
                         ],
@@ -111,7 +111,7 @@
                             // inverted: true
                             tick: {
                                 format: d =>
-                                    parseInt(d)-800
+                                    parseInt(d)-maxDepth
                             }
 
                         }
