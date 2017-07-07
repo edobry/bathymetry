@@ -10,6 +10,7 @@
             crossorigin="anonymous"></script>
         <script src="https://d3js.org/d3.v3.min.js"></script>
         <script src="../node_modules/c3/c3.js"></script>
+        <script src="../node_modules/chroma-js/chroma.min.js"></script>
         <style type="text/css">
             .c3-target-floor .c3-areas-floor path {
                 opacity: 1 !important;
@@ -22,6 +23,19 @@
 
             .c3-target-floor .c3-lines-floor path {
                 stroke: rgb(196, 195, 166) !important;
+            }
+
+            .c3-chart-line .c3-circle {
+                fill: rgb(7, 6, 59) !important;
+            }
+
+            .c3-chart-line .c3-circle-0,
+            .c3-target-floor .c3-circle {
+                visibility: hidden !important;
+            }
+
+            .c3-chart-line .c3-circle-0 {
+                visibility: hidden !important;
             }
         </style>
     </head>
@@ -62,6 +76,9 @@
                     return map;
                 };
 
+                const colorScale = chroma.scale(['#1e489c','#de4132'])
+                    .mode('lch').colors(bandRows.length);
+
                 const xVals = Object.keys(floor).map(parseFloat);
                 const stationX = Object.keys(Object.values(bands)[0])
                     .map(parseFloat)
@@ -79,13 +96,11 @@
                     data: {
                         xs: [
                             ["floor", "x"],
-                            ["surface", "x"],
                             ...bandNames.map(band => [band, "stationX"])
                         ].reduce(entriesToMap, {}),
                         columns: [
                             ["x", ...xVals],
                             ["stationX", ...stationX],
-                            ["surface", ...xVals.map(x => maxDepth)],
                             ...bandRows,
                             ["floor", ...floorVals]
                         ],
@@ -97,13 +112,17 @@
                             ...bandNames.map(name => [name, "area"])
                         ].reduce(entriesToMap, {}),
                         groups: [[...bandNames]],
-                        // color: (color, d) => {
-                        //     console.log(color, d);
-                        //     console.log(`#${Math.floor(parseInt(d.id) / 26)*10}FFFF`);
-                        //     return d == "id" || d.id == "floor"
-                        //         ? color
-                        //         : `#${Math.floor(parseInt(d.id) / 26)*10}FFFF`
-                        // }
+                        color: (color, d) => {
+                            const id = typeof d == "object"
+                                ? d.id
+                                : d;
+
+                            const thing = {
+                                floor: "#7e7d6a"
+                            }[id] || colorScale[bandNames.indexOf(id)];
+
+                            return thing;
+                        }
 
 
                     },
