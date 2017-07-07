@@ -242,9 +242,10 @@ Promise.join(transectP, stationP).then(([transects, stations]) => {
                 dist,
                 bands: Object.entries(temps)
                     .reduce((agg, [depth, temp]) => {
+                        //find the band this should belong to
                         const closest = Math.floor(temp / bandSize) * bandSize;
 
-                        if((agg[closest] || 0) < depth)
+                        if(!agg[closest])
                             agg[closest] = depth;
 
                         return agg;
