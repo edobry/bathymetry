@@ -14,19 +14,12 @@
         <style type="text/css">
             .c3-target-floor .c3-areas-floor path {
                 opacity: 1 !important;
-                fill: rgb(126, 125, 106) !important;
-            }
-
-            .c3-target-floor .c3-circles-floor circle {
-                fill: rgb(196, 195, 166) !important;
-            }
-
-            .c3-target-floor .c3-lines-floor path {
-                stroke: rgb(196, 195, 166) !important;
+                fill: rgb(0, 0, 65) !important;
             }
 
             .c3-chart-line .c3-circle {
-                fill: rgb(7, 6, 59) !important;
+                fill: rgb(0, 0, 65) !important;
+                z-index: 0 !important;
             }
 
             .c3-chart-line .c3-circle-0,
@@ -37,15 +30,26 @@
             .c3-chart-line .c3-circle-0 {
                 visibility: hidden !important;
             }
+
+            .c3-axis text {
+                font-size: 15px;
+            }
+
+            #title {
+                text-align: center;
+                font: 25px Arial;
+                font-weight: bold;
+                position: relative;
+                top: 30px;
+            }
         </style>
     </head>
     <body>
+        <h1 id="title"></h1>
         <div id="chart"></div>
 
         <script type="text/javascript">
 
-            //TODO: fix x ticks
-            //TODO: label axes
             //TODO: move legend to right and make ranges
             const byField = field => (a, b) =>
                 a[field] - b[field];
@@ -53,11 +57,14 @@
             const byFieldDesc = field => (a, b) =>
                 b[field] - a[field];
 
-            fetch("./transect1.json", { method: "get" })
+            const number = 1;
+
+            fetch(`./transect${number}.json`, { method: "get" })
                 .then(response =>
                     response.json())
                 .then(data => {
-                    return drawChart(data);
+                    drawChart(data);
+                    $("#title").text(`Transect ${number}`);
                 })
                 .catch(err => {
                     throw new Error(err);
@@ -66,21 +73,22 @@
             const drawChart = ({ bands, floor, maxDepth }) => {
                 const bandRows = Object.entries(bands)
                     .sort(([a], [b]) =>
-                        parseFloat(b) - parseFloat(a))
+                        parseFloat(a) - parseFloat(b))
                     .map(([name, points]) => [
                         name, ...Object.entries(points)
                             .map(([dist, depth]) =>
                                 depth)
                     ]);
 
-                const bandNames = bandRows.map(([name]) => name);
+                const bandNames = bandRows.map(([name]) => name).sort((a, b) =>
+                    parseFloat(a) - parseFloat(b));
 
                 const entriesToMap = (map, [key, value]) => {
                     map[key] = value;
                     return map;
                 };
 
-                const colorScale = chroma.scale(['#1e489c','#de4132'])
+                const colorScale = chroma.scale(["rgb(0, 154, 205)","rgb(127, 255, 212)"])
                     .mode('lch').colors(bandRows.length);
 
                 const xVals = Object.keys(floor).map(parseFloat);
@@ -108,8 +116,10 @@
                             ...bandRows,
                             ["floor", ...floorVals]
                         ],
-                        // order: false,
-                        order: bandNames,
+                        names: bandRows
+                            .map(([name]) => [name, `${name} - ${parseInt(name) + 0.9}`])
+                            .reduce(entriesToMap, {}),
+                        order: false,
                         // "line", "spline", "step", "area", "area-step" are also available to stack
                         types: [
                             ["floor", "area"],
@@ -127,21 +137,36 @@
 
                             return thing;
                         }
-
-
                     },
-                    // area: {
-                    //     zerobased: false
-                    // },
                     axis: {
                         y: {
-                            // inverted: true
                             tick: {
                                 format: d =>
                                     parseInt(d)-maxDepth
+                            },
+                            label: {
+                                text: "depth (m)",
+                                position: "outer-middle"
                             }
-
+                        },
+                        x: {
+                            label: {
+                                text: "distance from start of transect (km)",
+                                // position: "outer-center"
+                            },
+                            tick: {
+                                count: xVals.length / 2,
+                                format: d =>
+                                    d.toFixed(0),
+                                fit: false
+                            }
                         }
+                    },
+                    legend: {
+                        position: "right"
+                    },
+                    tooltip: {
+                        show: false
                     }
                 };
 
@@ -149,6 +174,43 @@
                 console.log(config.data.columns.map(col => col[0]));
 
                 var chart = c3.generate(config);
+
+                const xPos = item =>
+                    [...item.classList].filter(className =>
+                        className.includes("legend-item-"))
+                    .map(itemName => {
+                        const name = itemName.replace("c3-legend-item-", "");
+
+                        return name == "floor"
+                            ? 0
+                            : parseInt(name);
+                    })
+                    .filter(x => !isNaN(x))[0];
+
+                const legend = $("#chart .c3-legend-item").detach().toArray();
+
+                const ys = legend.map((item, i) => [
+                    $(item).children("text").attr("y"),
+                    $(item).children("rect").attr("y"),
+                    $(item).children("line").attr("y1"),
+                ]);
+
+                const orderedLegend = legend
+                    .sort((a, b) =>
+                        xPos(b) - xPos(a))
+                    .map((item, i) => {
+                        const [text, rect, line] = ys[i];
+
+                        $(item).children("text").attr("y", text);
+                        $(item).children("rect").attr("y", rect);
+                        $(item).children("line").attr("y1", line);
+                        $(item).children("line").attr("y2", line);
+
+                        return item;
+                    });
+
+                orderedLegend.forEach(item =>
+                    $("#chart svg > g").eq(2).append(item));
             };
         </script>
     </body>
