@@ -32,17 +32,16 @@ const entriesToMap = (map, [key, value]) => {
     return map;
 };
 
-const readStationInfo = transect =>
+const readStationInfo = transect => {
     console.log(`Transect ${transect}: reading station info...`);
 
-    fsP.readFileAsync(`./data/transect${transectNumber}/stations${transectNumber}.txt`, "UTF-8").then(contents => {
+    return fsP.readFileAsync(`./data/transect${transect}/stations${transect}.txt`, "UTF-8").then(contents => {
         console.log(`Transect ${transect}: processing station info....`);
 
-        const sections = contents.split("\r\n\r\n");
-        const stations = sections.slice(0, sections.length - 1);
+        const stations = contents.split("\r\n\r\n");
 
-        return stations.map(section => {
-            const [number, coords, distance] = section.split("\r\n");
+        return stations.map(station => {
+            const [number, type, coords, distance] = station.split("\r\n");
 
             return [
                 parseInt(number.split(" ")[0]),
@@ -50,6 +49,7 @@ const readStationInfo = transect =>
             ];
         }).reduce(entriesToMap, {});
     });
+};
 
 const parseRowWith = header => row =>
     row.reduce((data, col, i) => {
@@ -78,9 +78,9 @@ const average = values => values
 const readStations = (transect, stations) =>
     collectQueries(stations
         .map(station =>
-            [station, readStation(transect, station)]))
+            [station, readStation(transect, station)]));
 
-const csvStationParser = (rows, header) =>
+const csvStationParser = rows =>
     rows.slice(1, rows.length - 1).map(row => {
         const cols = row
             //normalize uneven column spacing
@@ -97,76 +97,73 @@ const csvStationParser = (rows, header) =>
         cols[1] = cols[1].split("  ")[0];
 
         return cols;
-    });
+    }).map(parseRowWith(["temp", "depth"]));
 
-const txtStationParser = (rows, header) =>
+const txtStationParser = rows =>
     rows.slice(35, rows.length - 1).map(row => {
         const cols = row
             //normalize uneven column spacing
-            .replace(/      /g, cnvSeperator)
-            .replace(/     /g, cnvSeperator)
-            .replace(/   /g, cnvSeperator)
-            .replace(/  /g, cnvSeperator)
-            .replace(/ /g, cnvSeperator)
-            .replace(/\t /g, cnvSeperator)
+            .replace(/\s+/g, cnvSeperator)
+            .replace(/\t\s+/g, cnvSeperator)
             //break into cols and drop empty first
             .split(cnvSeperator).slice(1);
 
         if(typeof cols[1] == "undefined")
             console.log("Undefined:", cols);
 
-        return cols;
-    });
+        return cols.slice(0, cols.length - 1);
+    }).map(parseRowWith(["depth", "temp"]));
 
 const readStation = (transect, station) => {
-    console.log(`Transect ${transect}: readomg station ${station}...`);
+    console.log(`Transect ${transect}: reading station ${station}...`);
 
     const prefix = `./data/transect${transect}`;
 
     const csvPath = path.join(prefix, `${station}.csv`);
     const txtPath = path.join(prefix, `0${station}.txt`);
 
-    const { path, parser } = fsP.statAsync(csvPath)
+    return fsP.statAsync(csvPath)
         .then(() => ({
-            path: csvPath,
+            stationPath: csvPath,
             parser: csvStationParser
-        })).catch(() => {
-            path: txtPath,
+        })).catch(() => ({
+            stationPath: txtPath,
             parser: txtStationParser
+        }))
+        .then(({ stationPath, parser }) =>
+            fsP.readFileAsync(stationPath, "UTF-8").then(contents => {
+                console.log(`Transect ${transect}: parsing station ${station}`);
+
+                const rows = contents.split("\n");
+
+                return parser(rows)
+                    //don't care about deeper than 800m
+                    .filter(point => point.depth <= maxDepth + 1);
+            }))
+        .then(points => {
+            //group points into integral depth group
+            const depthRanges = points
+                .sort(byField("depth"))
+                .reduce((depthRanges, point) => {
+                    const { depth, temp } = point;
+
+                    const normDepth = Math.floor(depth);
+
+                    if(!depthRanges[normDepth])
+                        depthRanges[normDepth] = [];
+
+                    depthRanges[normDepth].push(temp);
+
+                    return depthRanges;
+                }, {});
+
+            //average them
+            return Object.entries(depthRanges)
+                .map(([range, temps]) =>
+                    [range, average(temps)])
+                .reduce(entriesToMap, {});
         });
-
-    return fsP.readFileAsync(stationPath, "UTF-8").then(contents => {
-        console.log(`Transect ${transect}: parsing station ${station}`);
-
-        const rows = contents.split("\n");
-
-        return parser(rows, ["temp", "depth"])
-            .map(parseRowWith(header))
-            //don't care about deeper than 800m
-            .filter(point => point.depth <= maxDepth + 1);
-    }).then(points => {
-        //group points into integral depth group
-        const depthRanges = points
-            .sort(byField("depth"))
-            .reduce((depthRanges, point) => {
-                const { depth, temp } = point;
-
-                const normDepth = Math.floor(depth);
-
-                if(!depthRanges[normDepth])
-                    depthRanges[normDepth] = [];
-
-                depthRanges[normDepth].push(temp);
-
-                return depthRanges;
-            }, {});
-
-        //average them
-        return Object.entries(depthRanges)
-            .map(([range, temps]) =>
-                [range, average(temps)])
-            .reduce(entriesToMap, {})
-    });
+};
 
 const byField = field => (a, b) =>
     parseFloat(a[field]) - parseFloat(b[field]);
@@ -177,8 +174,11 @@ const byFieldDesc = field => (a, b) =>
 const processTransect = transect => {
     console.log(`Processing transect ${transect}...`);
 
-    const transectP = fsP.readFileAsync(`./data/transect${transectNumber}/transect_${transect}.csv`, "UTF-8").then(contents => {
-        console.log(`Transect ${transect}: read in bathymetry`);
+    const bathymetryPath = `./data/transect${transect}/transect_${transect}.csv`;
+    console.log(`Transect ${transect}: reading bathymetry...`);
+    const transectP = fsP.readFileAsync(bathymetryPath, "UTF-8").then(contents => {
+        console.log(`Transect ${transect}: processing bathymetry...`);
+
         const rows = contents.split("\n")
             .map(row =>
                 row.split("\t"));
@@ -192,34 +192,51 @@ const processTransect = transect => {
         return rows.slice(1, rows.length - 1)
             .map(parseRowWith(header))
             .sort(byField("dist.km"));
+    }).catch(() => {
+        throw new Error(`bathymetry for transect ${transect} not found!`);
+    });
+
+    const stationP = readStationInfo(transect)
+        .then(info => {
+            console.log(`Transect ${transect} station info:`);
+            console.log(info);
+
+            return readStations(transect, Object.keys(info))
+                .then(stations =>
+                    Object.entries(stations)
+                        .map(([key, station]) => [
+                            key, {
+                                temps: station,
+                                dist: info[key]
+                            }
+                        ]).reduce(entriesToMap, {}));
         });
 
-        const stationP = readStationInfo(transect)
-            .then(info =>
-                readStations(transect, Object.keys(info))
-                    .then(stations =>
-                        Object.entries(stations)
-                            .map(([key, station]) => [
-                                key, {
-                                    temps: station,
-                                    dist: info[key]
-                                }
-                            ]).reduce(entriesToMap, {}));
-        };
-
-    Promise.join(transectP, stationP).then(([transects, stations]) => {
+    return Promise.join(transectP, stationP).then(([transects, stations]) => {
         console.log(`Transect ${transect}: interpolating bathymetry for stations...`);
 
         const stationPositions = Object.keys(stations).sort();
 
         let transectPos = 0;
         for(const [key, station] of Object.entries(stations)) {
-            do {
-                var a = transects[transectPos];
-                var b = transects[transectPos + 1];
 
-                transectPos++;
-            } while(b["dist.km"] < station.dist);
+            // console.log(`Transect ${transect} station:`);
+            // console.log(key, station);
+
+            try{
+                do {
+                    var a = transects[transectPos];
+                    var b = transects[transectPos + 1];
+
+                    // console.log(transects[transectPos]);
+                    // console.log(transects[transectPos + 1]);
+
+                    transectPos++;
+                } while(b["dist.km"] < station.dist);
+            }
+            catch (e) {
+                throw new Error(`Failed interpolating transect ${transect}: ${e.message}`);
+            }
 
             if(a["dist.km"] == station.dist || b["dist.km"] == station.dist)
                 continue;
@@ -247,7 +264,7 @@ const processTransect = transect => {
 
         console.log(`Transect ${transect}: processing station data...`);
 
-        //put the stations into x order
+        //put the stations into x order |
         const orderedStations = Object.entries(stations)
             .map(([name, { dist, temps }]) => [dist, {
                 name,
@@ -255,28 +272,32 @@ const processTransect = transect => {
             .sort(byField("dist"));
             // .reduce(entriesToMap, {});
 
+
+        console.log(`Transect ${transect} stations:`);
+        console.log(orderedStations);
+
+
         const bands = orderedStations
             //group station temperatures into bands
             .map(([dist, { name, temps }]) => ({
-                    dist,
-                    bands: Object.entries(temps)
-                        .reduce((agg, [depth, temp]) => {
-                            // if(temp < 18)
-                            //     agg.bandSize = 2;
+                dist,
+                bands: Object.entries(temps)
+                    .reduce((agg, [depth, temp]) => {
+                        // if(temp < 18)
+                        //     agg.bandSize = 2;
 
-                            //find the band this should belong to
-                            const closest = Math.floor(temp / agg.bandSize) * agg.bandSize;
-                            // console.log(`Temp ${temp} bandSize ${agg.bandSize} closest to ${closest}`);
+                        //find the band this should belong to
+                        const closest = Math.floor(temp / agg.bandSize) * agg.bandSize;
 
-                            if(!agg.bands[closest])
-                                agg.bands[closest] = depth;
+                        if(!agg.bands[closest])
+                            agg.bands[closest] = depth;
 
-                            return agg;
-                        }, {
-                            bandSize: 1,
-                            bands: {}
-                        }).bands
-                }))
+                        return agg;
+                    }, {
+                        bandSize: 1,
+                        bands: {}
+                    }).bands
+            }))
             //invert to band-series
             .reduce((bands, station, i) => {
                 Object.entries(station.bands)
@@ -290,51 +311,70 @@ const processTransect = transect => {
                 return bands;
             }, {});
 
-            console.log(bands);
-
         let bandInterpolators = Object.entries(bands)
             .filter(([band, points]) =>
                 Object.keys(points).length >= 2)
             .map(makeInterpolators)
             .reduce(entriesToMap, {});
 
+        console.log(`Transect ${transect} bands:`);
+        console.log(bands);
+
+
         //interpolate bands that are missing station points
-        Object.entries(bands)
+        const orderedBands = Object.entries(bands)
             //order by temperature
-            .sort(byFieldDesc(0))
-            .filter(([band, points]) =>
-                //get the ones that need interpolating
-                Object.keys(points).length < orderedStations.length)
-            .reduce((agg, [band, points]) => {
-                //get the band interpolator or reuse previous one
-                if(bandInterpolators[band]) {
-                    agg.interpolate = Object.entries(bandInterpolators[band].lines)
-                        .sort(byField(0))[0][1];
-                }
+            .sort(byFieldDesc(0));
+            // .filter(([band, points]) =>
+            //     //get the ones that need interpolating
+            //     Object.keys(points).length < orderedStations.length)
 
-                //find the stations that need interpolation
-                const pointsToInterpolate = [];
-                let firstKnownPoint;
-                for(const [dist, { name, temps }] of orderedStations.sort(byField(0))) {
-                    //once we reach the first station with data, we're done
-                    if(points[dist]) {
-                        firstKnownPoint = {
-                            dist,
-                            depth: points[dist]
-                        };
-                        break;
-                    }
+        orderedBands.reduce((agg, [bandName, points], i) => {
+            // console.log(`Transect ${transect}: trying to interpolate band ${band}`);
+            //get the band interpolator or reuse previous one
+            if(bandInterpolators[bandName]) {
+                agg.interpolate = Object.entries(bandInterpolators[bandName].lines)
+                    .sort(byField(0))[0][1];
+            }
+            else if(bandName == 27)
+                agg.interpolate = Object.entries(bandInterpolators[orderedBands[1][0]].lines)
+                    .sort(byField(0))[0][1];
 
-                    pointsToInterpolate.push(dist);
-                }
-
-                pointsToInterpolate
-                    .forEach(point => {
-                        points[point] = Math.round(agg.interpolate(point, firstKnownPoint));
-                    });
-
+            if(Object.keys(points).length >= orderedStations.length)
                 return agg;
-            }, {});
+
+            //find the stations that need interpolation
+            const pointsToInterpolate = [];
+            let firstKnownPoint;
+            for(const [dist, { name, temps }] of orderedStations.sort(byField(0))) {
+                //once we reach the first station with data, we're done
+                if(points[dist]) {
+                    firstKnownPoint = {
+                        dist,
+                        depth: points[dist]
+                    };
+                    break;
+                }
+
+                pointsToInterpolate.push(dist);
+            }
+
+            pointsToInterpolate
+                .forEach(point => {
+                    try {
+                        points[point] = Math.round(agg.interpolate(point, firstKnownPoint));
+                    }
+                    catch(e) {
+                        console.log(`Transect ${transect} interpolators:`);
+                        console.log(bandInterpolators);
+                        throw new Error(`Transect ${transect} interpolator for point ${point} band ${band} is bad :c`);
+                    }
+                });
+
+            return agg;
+        }, {
+            // interpolate:
+        });
 
         //convert to band stacks
         Object.entries(bands)
@@ -369,20 +409,17 @@ const processTransect = transect => {
         const xPositions = Object.keys(floor);
 
         console.log(`Transect ${transect}: writing file...`);
-        fsP.writeFileAsync(`./data/transect${transectNumber}/out.json`, JSON.stringify({
+        return fsP.writeFileAsync(`./data/transect${transect}/out.json`, JSON.stringify({
             bands, floor, maxDepth
         })).then(() =>
             console.log(`Transect ${transect}: done!`));
     });
 };
 
-console.log("Reading data directory...")
-fsP.readdirAsync("./data").forEach(transectDir =>{
-    const transectNumber = transectDir.replace("transect", "");
-
-    processTransect(transectNumber);
-});
-
+console.log("Reading data directory...");
+fsP.readdirAsync("./data").then(dirs =>
+    dirs.map(transectDir =>
+        processTransect(transectDir.replace("transect", ""))));
 
 const interpolateD = interpolate("dist");
 
@@ -403,7 +440,7 @@ const makeInterpolators = ([band, points]) => {
             return agg;
         }, {
             lines: {},
-        })
+        });
 
     return [
         band,
