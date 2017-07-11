@@ -197,11 +197,8 @@ const processTransect = transect => {
     });
 
     const stationP = readStationInfo(transect)
-        .then(info => {
-            console.log(`Transect ${transect} station info:`);
-            console.log(info);
-
-            return readStations(transect, Object.keys(info))
+        .then(info =>
+            readStations(transect, Object.keys(info))
                 .then(stations =>
                     Object.entries(stations)
                         .map(([key, station]) => [
@@ -209,8 +206,7 @@ const processTransect = transect => {
                                 temps: station,
                                 dist: info[key]
                             }
-                        ]).reduce(entriesToMap, {}));
-        });
+                        ]).reduce(entriesToMap, {})));
 
     return Promise.join(transectP, stationP).then(([transects, stations]) => {
         console.log(`Transect ${transect}: interpolating bathymetry for stations...`);
@@ -219,24 +215,12 @@ const processTransect = transect => {
 
         let transectPos = 0;
         for(const [key, station] of Object.entries(stations)) {
+            do {
+                var a = transects[transectPos];
+                var b = transects[transectPos + 1];
 
-            // console.log(`Transect ${transect} station:`);
-            // console.log(key, station);
-
-            try{
-                do {
-                    var a = transects[transectPos];
-                    var b = transects[transectPos + 1];
-
-                    // console.log(transects[transectPos]);
-                    // console.log(transects[transectPos + 1]);
-
-                    transectPos++;
-                } while(b["dist.km"] < station.dist);
-            }
-            catch (e) {
-                throw new Error(`Failed interpolating transect ${transect}: ${e.message}`);
-            }
+                transectPos++;
+            } while(b["dist.km"] < station.dist);
 
             if(a["dist.km"] == station.dist || b["dist.km"] == station.dist)
                 continue;
@@ -270,12 +254,6 @@ const processTransect = transect => {
                 name,
                 temps }])
             .sort(byField("dist"));
-            // .reduce(entriesToMap, {});
-
-
-        console.log(`Transect ${transect} stations:`);
-        console.log(orderedStations);
-
 
         const bands = orderedStations
             //group station temperatures into bands
@@ -317,10 +295,6 @@ const processTransect = transect => {
             .map(makeInterpolators)
             .reduce(entriesToMap, {});
 
-        console.log(`Transect ${transect} bands:`);
-        console.log(bands);
-
-
         //interpolate bands that are missing station points
         const orderedBands = Object.entries(bands)
             //order by temperature
@@ -330,7 +304,6 @@ const processTransect = transect => {
             //     Object.keys(points).length < orderedStations.length)
 
         orderedBands.reduce((agg, [bandName, points], i) => {
-            // console.log(`Transect ${transect}: trying to interpolate band ${band}`);
             //get the band interpolator or reuse previous one
             if(bandInterpolators[bandName]) {
                 agg.interpolate = Object.entries(bandInterpolators[bandName].lines)
@@ -361,20 +334,11 @@ const processTransect = transect => {
 
             pointsToInterpolate
                 .forEach(point => {
-                    try {
-                        points[point] = Math.round(agg.interpolate(point, firstKnownPoint));
-                    }
-                    catch(e) {
-                        console.log(`Transect ${transect} interpolators:`);
-                        console.log(bandInterpolators);
-                        throw new Error(`Transect ${transect} interpolator for point ${point} band ${band} is bad :c`);
-                    }
+                    points[point] = Math.round(agg.interpolate(point, firstKnownPoint));
                 });
 
             return agg;
-        }, {
-            // interpolate:
-        });
+        }, {});
 
         //convert to band stacks
         Object.entries(bands)
