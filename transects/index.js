@@ -1,5 +1,6 @@
 const
     fs = require("fs"),
+    path = require("path"),
 
     Promise = require("bluebird");
 
@@ -74,37 +75,75 @@ const collectQueriesFromObj = queries =>
 const average = values => values
     .reduce((total, val) => total + val, 0) / values.length;
 
-const readStations = stations =>
+const readStations = (transect, stations) =>
     collectQueries(stations
         .map(station =>
-            [station, readStation(station)]))
+            [station, readStation(transect, station)]))
 
-const readStation = station =>
-    fsP.readFileAsync(`./NF1703_0${station}fix.cnv`, "UTF-8").then(contents => {
+const csvStationParser = (rows, header) =>
+    rows.slice(1, rows.length - 1).map(row => {
+        const cols = row
+            //normalize uneven column spacing
+            .replace(/      /g, cnvSeperator)
+            .replace(/     /g, cnvSeperator)
+            .replace(/   /g, cnvSeperator)
+            //break into cols and drop empty first
+            .split(cnvSeperator).slice(1);
+
+        if(typeof cols[1] == "undefined")
+            console.log("Undefined:", cols);
+
+        //filter out scientific notation at end
+        cols[1] = cols[1].split("  ")[0];
+
+        return cols;
+    });
+
+const txtStationParser = (rows, header) =>
+    rows.slice(35, rows.length - 1).map(row => {
+        const cols = row
+            //normalize uneven column spacing
+            .replace(/      /g, cnvSeperator)
+            .replace(/     /g, cnvSeperator)
+            .replace(/   /g, cnvSeperator)
+            .replace(/  /g, cnvSeperator)
+            .replace(/ /g, cnvSeperator)
+            .replace(/\t /g, cnvSeperator)
+            //break into cols and drop empty first
+            .split(cnvSeperator).slice(1);
+
+        if(typeof cols[1] == "undefined")
+            console.log("Undefined:", cols);
+
+        return cols;
+    });
+
+const readStation = (transect, station) => {
+    console.log(`Transect ${transect}: readomg station ${station}...`);
+
+    const prefix = `./data/transect${transect}`;
+
+    const csvPath = path.join(prefix, `${station}.csv`);
+    const txtPath = path.join(prefix, `0${station}.txt`);
+
+    const { path, parser } = fsP.statAsync(csvPath)
+        .then(() => ({
+            path: csvPath,
+            parser: csvStationParser
+        })).catch(() => {
+            path: txtPath,
+            parser: txtStationParser
+        });
+
+    return fsP.readFileAsync(stationPath, "UTF-8").then(contents => {
+        console.log(`Transect ${transect}: parsing station ${station}`);
+
         const rows = contents.split("\n");
 
-        const header = rows[0].split("\t").slice(1).map(colName =>
-            colName.replace(/\r/, ""));
-
-        return rows.slice(1, rows.length - 1).map(row => {
-            const cols = row
-                //normalize uneven column spacing
-                .replace(/      /g, cnvSeperator)
-                .replace(/     /g, cnvSeperator)
-                .replace(/   /g, cnvSeperator)
-                //break into cols and drop empty first
-                .split(cnvSeperator).slice(1);
-
-            if(typeof cols[1] == "undefined")
-                console.log("Undefined:", cols);
-
-            //filter out scientific notation at end
-            cols[1] = cols[1].split("  ")[0];
-
-            return cols;
-        }).map(parseRowWith(header))
-        //don't care about deeper than 800m
-        .filter(point => point.depth <= maxDepth + 1);
+        return parser(rows, ["temp", "depth"])
+            .map(parseRowWith(header))
+            //don't care about deeper than 800m
+            .filter(point => point.depth <= maxDepth + 1);
     }).then(points => {
         //group points into integral depth group
         const depthRanges = points
@@ -157,7 +196,7 @@ const processTransect = transect => {
 
         const stationP = readStationInfo(transect)
             .then(info =>
-                readStations(Object.keys(info))
+                readStations(transect, Object.keys(info))
                     .then(stations =>
                         Object.entries(stations)
                             .map(([key, station]) => [
