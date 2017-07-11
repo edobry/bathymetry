@@ -92,7 +92,7 @@
                     .map(([name, points]) => [
                         name, ...Object.entries(points)
                             .map(([dist, depth]) =>
-                                Math.max(depth, 0))
+                                Math.max(parseInt(depth), 0))
                     ]);
 
                 const bandNames = bandRows.map(([name]) => name).sort((a, b) =>
@@ -202,7 +202,7 @@
                     })
                     .filter(x => !isNaN(x))[0];
 
-                const legend = $("#chart .c3-legend-item").detach().toArray();
+                const legend = $(`#${containerId} .c3-legend-item`).detach().toArray();
 
                 const ys = legend.map((item, i) => [
                     $(item).children("text").attr("y"),
