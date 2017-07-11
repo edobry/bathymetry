@@ -35,7 +35,7 @@
                 font-size: 15px;
             }
 
-            #title {
+            .title {
                 text-align: center;
                 font: 25px Arial;
                 font-weight: bold;
@@ -45,8 +45,7 @@
         </style>
     </head>
     <body>
-        <h1 id="title"></h1>
-        <div id="chart"></div>
+        <div id="transects"></div>
 
         <script type="text/javascript">
 
@@ -57,27 +56,43 @@
             const byFieldDesc = field => (a, b) =>
                 b[field] - a[field];
 
-            const number = 1;
+            const transectDiv = $("#transects");
 
-            fetch(`./transect${number}.json`, { method: "get" })
-                .then(response =>
-                    response.json())
-                .then(data => {
-                    drawChart(data);
-                    $("#title").text(`Transect ${number}`);
-                })
-                .catch(err => {
-                    throw new Error(err);
-                });
+            const transects = [1,2,3,4,5,6,7,8,9,10,11];
 
-            const drawChart = ({ bands, floor, maxDepth }) => {
+            transects.forEach(transect => {
+                const transectContainer = $("<div>").attr("id", `transect${transect}`);
+
+                const chartId = `chart${transect}`;
+                const chartContainer = $("<div>").attr("id", chartId);
+
+                transectContainer
+                    .append($("<h1>").attr("id", `title${transect}`)
+                        .addClass("title")
+                        .text(`Transect ${transect}`))
+                    .append(chartContainer);
+
+                transectDiv.append(transectContainer);
+            });
+
+            transects.forEach(transect =>
+                fetch(`./data/transect${transect}/out.json`, { method: "get" })
+                    .then(response =>
+                        response.json())
+                    .then(data =>
+                        drawChart(data, `chart${transect}`))
+                    .catch(err => {
+                        throw new Error(err);
+                    }));
+
+            const drawChart = ({ bands, floor, maxDepth }, containerId) => {
                 const bandRows = Object.entries(bands)
                     .sort(([a], [b]) =>
                         parseFloat(a) - parseFloat(b))
                     .map(([name, points]) => [
                         name, ...Object.entries(points)
                             .map(([dist, depth]) =>
-                                depth)
+                                Math.max(depth, 0))
                     ]);
 
                 const bandNames = bandRows.map(([name]) => name).sort((a, b) =>
@@ -91,17 +106,20 @@
                 const colorScale = chroma.scale(["rgb(0, 154, 205)","rgb(127, 255, 212)"])
                     .mode('lch').colors(bandRows.length);
 
-                const xVals = Object.keys(floor).map(parseFloat);
+                const truncatedFloor = Object.entries(floor)
+                    .filter(([, depth]) => depth < maxDepth)
+                    .reduce(entriesToMap, {});
+
+                const floorVals = Object.values(truncatedFloor)
+                    .map(x => maxDepth-x);
+
+                const xVals = Object.keys(truncatedFloor).map(parseFloat);
                 const stationX = Object.keys(Object.values(bands)[0])
                     .map(parseFloat)
                     .sort();
 
-                const floorVals = Object.values(floor)
-                    .filter(depth => depth < maxDepth)
-                    .map(x => maxDepth-x);
-
                 const config = {
-                    bindto: "#chart",
+                    bindto: `#${containerId}`,
                     size: {
                         height: 500
                     },
@@ -170,9 +188,6 @@
                     }
                 };
 
-                console.log(config);
-                console.log(config.data.columns.map(col => col[0]));
-
                 var chart = c3.generate(config);
 
                 const xPos = item =>
@@ -210,7 +225,7 @@
                     });
 
                 orderedLegend.forEach(item =>
-                    $("#chart svg > g").eq(2).append(item));
+                    $(`#${containerId} svg > g`).eq(2).append(item));
             };
         </script>
     </body>

@@ -208,32 +208,7 @@ const processTransect = transect => {
                             }
                         ]).reduce(entriesToMap, {})));
 
-    return Promise.join(transectP, stationP).then(([transects, stations]) => {
-        console.log(`Transect ${transect}: interpolating bathymetry for stations...`);
-
-        const stationPositions = Object.keys(stations).sort();
-
-        let transectPos = 0;
-        for(const [key, station] of Object.entries(stations)) {
-            do {
-                var a = transects[transectPos];
-                var b = transects[transectPos + 1];
-
-                transectPos++;
-            } while(b["dist.km"] < station.dist);
-
-            if(a["dist.km"] == station.dist || b["dist.km"] == station.dist)
-                continue;
-
-            const estimatedDepth = Math.floor(interpolateDist(a, b)(station.dist));
-
-            transects.splice(transectPos, 0, {
-                "dist.km": station.dist,
-                depth: estimatedDepth
-            });
-        }
-        return { transects, stations };
-    }).then(({ transects, stations }) => {
+    return Promise.join(transectP, stationP).then(({ transects, stations }) => {
         //do the banding now
         //what is banding? group station temps by degree range, mb just 10C for now?
         //what data do we want to get out of this?
@@ -289,19 +264,47 @@ const processTransect = transect => {
                 return bands;
             }, {});
 
+        // let bandInterpolators = Object.entries(bands)
+        //     .filter(([band, points]) =>
+        //         Object.keys(points).length >= 2)
+        //     .map(makeInterpolators)
+        //     .reduce(entriesToMap, {});
+
+        //fake horizontal interpolators
         let bandInterpolators = Object.entries(bands)
-            .filter(([band, points]) =>
-                Object.keys(points).length >= 2)
-            .map(makeInterpolators)
+            .map(([band, points]) => {
+                const { lines } = Object.entries(points)
+                    .map(([dist, depth]) => ({
+                        dist,
+                        depth }))
+                    .sort(byField("dist"))
+                    .reduce((agg, point) => {
+                        agg.lines[point] = interpolateD({
+                            dist: point.dist - 1,
+                            depth: point.depth
+                        }, point);
+
+                        return agg;
+                    }, {
+                        lines: {},
+                    });
+
+                return [
+                    band,
+                    { points, lines }
+                ];
+            })
             .reduce(entriesToMap, {});
+
+        console.log(bandInterpolators);
 
         //interpolate bands that are missing station points
         const orderedBands = Object.entries(bands)
             //order by temperature
-            .sort(byFieldDesc(0));
-            // .filter(([band, points]) =>
-            //     //get the ones that need interpolating
-            //     Object.keys(points).length < orderedStations.length)
+            .sort(byFieldDesc(0))
+            .filter(([band, points]) =>
+                //get the ones that need interpolating
+                Object.keys(points).length < orderedStations.length);
 
         orderedBands.reduce((agg, [bandName, points], i) => {
             //get the band interpolator or reuse previous one
@@ -313,8 +316,8 @@ const processTransect = transect => {
                 agg.interpolate = Object.entries(bandInterpolators[orderedBands[1][0]].lines)
                     .sort(byField(0))[0][1];
 
-            if(Object.keys(points).length >= orderedStations.length)
-                return agg;
+            // if(Object.keys(points).length == orderedStations.length)
+            //     return agg;
 
             //find the stations that need interpolation
             const pointsToInterpolate = [];
@@ -340,6 +343,9 @@ const processTransect = transect => {
             return agg;
         }, {});
 
+        console.log(`Transect ${transect}`);
+        console.log(bands);
+
         //convert to band stacks
         Object.entries(bands)
             .sort(byField(0))
@@ -357,11 +363,11 @@ const processTransect = transect => {
 
                 return agg;
             }, {});
-
-        //regen interpolators to make things easier, dont wanna think too hard
-        bandInterpolators = Object.entries(bands)
-            .map(makeInterpolators)
-            .reduce(entriesToMap, {});
+        //
+        // //regen interpolators to make things easier, dont wanna think too hard
+        // bandInterpolators = Object.entries(bands)
+        //     .map(makeInterpolators)
+        //     .reduce(entriesToMap, {});
 
         //get a nice clean floor series
         const floor = transects
