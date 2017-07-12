@@ -188,7 +188,7 @@ const processTransect = transect => {
                     if(!stacks[prevBand])
                         stacks[prevBand] = {};
 
-                    stacks[prevBand][dist] = newDepth;
+                    stacks[prevBand][dist] = Math.max(newDepth, 1);
                 });
 
         //convert to band stacks

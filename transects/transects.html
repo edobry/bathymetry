@@ -92,7 +92,7 @@
                     .map(([name, points]) => [
                         name, ...Object.entries(points)
                             .map(([dist, depth]) =>
-                                depth)
+                                parseInt(depth))
                     ]);
 
                 console.log(`Transect ${transect}`);
@@ -175,8 +175,8 @@
                     axis: {
                         y: {
                             tick: {
-                                // format: d =>
-                                //     parseInt(d)-maxDepth
+                                format: d =>
+                                    parseInt(d)-maxDepth
                             },
                             label: {
                                 text: "depth (m)",
