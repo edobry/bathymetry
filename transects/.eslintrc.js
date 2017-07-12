@@ -29,7 +29,6 @@ module.exports = {
         "space-before-function-paren": ["warn", "never"],
         "space-before-blocks": "error",
         "space-infix-ops": "warn",
-        "no-shadow": "warn",
         "strict": "off",
         "new-cap": "off",
         "no-unused-vars": ["warn", {

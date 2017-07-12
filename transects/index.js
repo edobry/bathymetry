@@ -18,39 +18,57 @@ const processTransect = transect => {
     return Promise.join(
         Bathymetry.load(transect),
         Station.loadStations(transect))
-    .then(([transects, stations]) => {
+    .then(([bathymetry, stations]) => {
         console.log(`Transect ${transect}: processing transect data...`);
 
-        //put the stations into x order
+        //get a nice clean floor series
+        const floor = bathymetry
+            .map(({ "dist.km": dist, depth }) =>
+                [dist.toFixed(2), -depth])
+            .reduce(util.entriesToMap, {});
+
+        //process and sort the stations
         const orderedStations = Object.entries(stations)
-            .map(([name, { dist, temps }]) => [dist, {
-                name,
+            .map(([, { dist, temps }]) => [dist, {
                 temps: Object.entries(temps)
                     //don't care about deeper than maxDepth
                     .filter(([ depth ]) =>
                         parseInt(depth) <= maxDepth + 1)
+                    .filter(([, temp]) =>
+                        temp < 27)
                     .reduce(util.entriesToMap, {})
             }]).sort(util.byField(0));
 
         const bands = orderedStations
             //group station temperatures into bands
-            .map(([dist, { name, temps }]) => ({
-                dist,
-                bands: Object.entries(temps)
-                    .reduce((agg, [depth, temp]) => {
-                        //find the band this should belong to
-                        const closest = Math.floor(temp / bandSize) * bandSize;
+            .map(([dist, { temps }]) => {
+                return {
+                    dist,
+                    bands: Object.entries(temps)
+                        .sort(util.byField(0))
+                        .reduce((agg, [depth, temp], i) => {
+                            //find the band this should belong to
+                            const closest = Math.floor(temp / bandSize) * bandSize;
 
-                        if(!agg.bands[closest] || agg.bands[closest] > parseInt(depth))
-                            agg.bands[closest] = parseInt(depth);
+                            //if we just entered a new band
+                            if(agg.currBand != closest) {
+                                //record it
+                                agg.bands[closest] = i == 0
+                                    //if its the first entry, use 0
+                                    ? 0
+                                    : parseInt(depth);
 
-                        return agg;
-                    }, {
-                        bands: {}
-                    }).bands
-            }))
+                                agg.currBand = closest;
+                            }
+
+                            return agg;
+                        }, {
+                            bands: {}
+                        }).bands
+                };
+            })
             //invert to band-series
-            .reduce((bands, station, i) => {
+            .reduce((bands, station) => {
                 Object.entries(station.bands)
                     .forEach(([temp, depth]) => {
                         if(typeof bands[temp] != "object")
@@ -69,7 +87,7 @@ const processTransect = transect => {
         //     .reduce(util.entriesToMap, {});
 
         //fake horizontal interpolators
-        let bandInterpolators = Object.entries(bands)
+        const bandInterpolators = Object.entries(bands)
             .map(([band, points]) => {
                 const { lines } = Object.entries(points)
                     .map(([dist, depth]) => ({
@@ -100,12 +118,12 @@ const processTransect = transect => {
         const orderedBands = Object.entries(bands)
             //order by temperature
             .sort(util.byFieldDesc(0))
-            .filter(([band, points]) =>
+            .filter(([, points]) =>
                 //get the ones that need interpolating
                 Object.keys(points).length < orderedStations.length);
 
-        orderedBands.reduce((agg, [bandName, points], i) => {
-            //get the band interpolator or reuse previous one
+        orderedBands.reduce((agg, [bandName, points]) => {
+            //get the band interpolator
             // if(bandInterpolators[bandName]) {
             const interpolate = Object.entries(bandInterpolators[bandName].lines)
                     .sort(util.byField(0))[0][1];
@@ -141,41 +159,60 @@ const processTransect = transect => {
             return agg;
         }, {});
 
+        console.log(Object.entries(bands).sort(util.byFieldDesc(0)));
+
         // console.log(`Transect ${transect}`);
         // console.log(bands);
 
-        //convert to band stacks
-        Object.entries(bands)
-            .sort(util.byField(0))
-            .reduce((agg, [band, points], i) => {
-                if(i == 0)
-                    agg.prev = Object.keys(points)
-                        .map(dist => [dist, 0])
-                        .reduce(util.entriesToMap, {});
+        const numBands = Object.keys(bands).length;
 
-                const newPoints = Object.entries(points)
-                    .map(([dist, depth]) =>
-                        [dist, (maxDepth - depth) - agg.prev[dist]])
-                    .forEach(([dist, depth]) =>
-                        agg.prev[dist] += points[dist] = depth);
+        const calcStack = (current, prevPoints, prevBand, stacks) =>
+            Object.entries(current)
+                .map(([dist, depth]) =>
+                    [dist, depth - prevPoints[dist]])
+                .forEach(([dist, newDepth]) => {
+                    if(!stacks[prevBand])
+                        stacks[prevBand] = {};
+
+                    stacks[prevBand][dist] = newDepth;
+                });
+
+        //convert to band stacks
+        const { stacks } = Object.entries(bands)
+            .sort(util.byFieldDesc(0))
+            .reduce((agg, [band, points], i) => {
+                // console.log(`Stacking band ${band} ${i} prev ${agg.prev}`);
+                // console.log(points);
+                if(i != 0)
+                    calcStack(points, agg.prevPoints, agg.prevBand, agg.stacks);
+
+                agg.prevPoints = Object.entries(points)
+                    .reduce(util.entriesToMap, {});
+                agg.prevBand = band;
+
+                if(i == numBands - 1)
+                    calcStack(
+                        Object.entries(points)
+                            .map(([dist]) => [dist, maxDepth])
+                            .reduce(util.entriesToMap, {}),
+                        points, band, agg.stacks);
 
                 return agg;
-            }, {});
+            }, {
+                stacks: {}
+            });
+
+        console.log(Object.entries(stacks).sort(util.byFieldDesc(0)));
+
 
         //regen interpolators to make things easier, dont wanna think too hard
         // bandInterpolators = Object.entries(bands)
         //     .map(makeInterpolators)
         //     .reduce(util.entriesToMap, {});
 
-        //get a nice clean floor series
-        const floor = transects
-            .map(({ "dist.km": dist, depth }) =>
-                [dist.toFixed(2), -depth])
-            .reduce(util.entriesToMap, {});
-
         console.log(`Transect ${transect}: writing file...`);
         return fsP.writeFileAsync(`./data/transect${transect}/out.json`, JSON.stringify({
-            bands, floor, maxDepth
+            bands: stacks, floor, maxDepth
         })).then(() =>
             console.log(`Transect ${transect}: done!`));
     });

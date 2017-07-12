@@ -80,20 +80,36 @@
                     .then(response =>
                         response.json())
                     .then(data =>
-                        drawChart(data, `chart${transect}`))
+                        drawChart(transect, data, `chart${transect}`))
                     .catch(err => {
                         throw new Error(err);
                     }));
 
-            const drawChart = ({ bands, floor, maxDepth }, containerId) => {
+            const drawChart = (transect, { bands, floor, maxDepth }, containerId) => {
                 const bandRows = Object.entries(bands)
                     .sort(([a], [b]) =>
-                        parseFloat(a) - parseFloat(b))
+                        parseFloat(b) - parseFloat(a))
                     .map(([name, points]) => [
                         name, ...Object.entries(points)
                             .map(([dist, depth]) =>
-                                Math.max(parseInt(depth), 0))
+                                depth)
                     ]);
+
+                console.log(`Transect ${transect}`);
+                console.log(bandRows);
+                console.log(Object.entries(bands)
+                    .sort(([a], [b]) =>
+                        parseFloat(b) - parseFloat(a))
+                    .reduce((agg, [name, points]) => {
+                        Object.entries(points).forEach(([dist, depth]) => {
+                            if(!agg[dist])
+                                agg[dist] = 0;
+
+                            agg[dist] += depth;
+                        });
+
+                        return agg;
+                    }, {}));
 
                 const bandNames = bandRows.map(([name]) => name).sort((a, b) =>
                     parseFloat(a) - parseFloat(b));
@@ -107,7 +123,7 @@
                     .mode('lch').colors(bandRows.length);
 
                 const truncatedFloor = Object.entries(floor)
-                    .filter(([, depth]) => depth < maxDepth)
+                    .filter(([, depth]) => depth <= maxDepth)
                     .reduce(entriesToMap, {});
 
                 const floorVals = Object.values(truncatedFloor)
@@ -159,8 +175,8 @@
                     axis: {
                         y: {
                             tick: {
-                                format: d =>
-                                    parseInt(d)-maxDepth
+                                // format: d =>
+                                //     parseInt(d)-maxDepth
                             },
                             label: {
                                 text: "depth (m)",
