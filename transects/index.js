@@ -36,6 +36,20 @@ const processTransect = transect => {
                         parseInt(depth) <= maxDepth + 1)
                     .filter(([, temp]) =>
                         temp < 27)
+                    //enforce monotonicity because fuck you
+                    .reduce((agg, [depth, temp], i) => {
+                        if(i > 0)
+                            agg.temperatures.push([depth,
+                                temp >= agg.prevTemp
+                                    ? temp
+                                    : agg.prevTemp]);
+
+                        agg.prevTemp = temp;
+
+                        return agg;
+                    }, {
+                        temperatures: []
+                    }).temperatures
                     .reduce(util.entriesToMap, {})
             }]).sort(util.byField(0));
 
